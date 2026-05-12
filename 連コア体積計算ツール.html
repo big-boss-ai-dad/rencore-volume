@@ -1,0 +1,2330 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>連コア体積計算ツール v18</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  if (window.pdfjsLib) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+</script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic", sans-serif; background: #f5f7fa; color: #1f2937; }
+  #root { padding: 16px; max-width: 1500px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 16px; color: #1a3a5c; }
+  .grid { display: grid; grid-template-columns: 460px 1fr; gap: 16px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 12px; position: relative; transition: box-shadow 0.2s; }
+  .card.drag-over { box-shadow: 0 0 0 3px #2d5a8b; }
+  .card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .card-header h2 { font-size: 15px; margin: 0; color: #2d5a8b; flex: 1; }
+  .drag-handle { cursor: grab; color: #9ca3af; user-select: none; padding: 2px 6px; font-size: 16px; border-radius: 4px; }
+  .drag-handle:hover { background: #f3f4f6; color: #374151; }
+
+  label { display: block; font-size: 12px; color: #555; margin-bottom: 4px; }
+  input[type="number"], input[type="text"], select { width: 100%; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; }
+  input[type="color"] { width: 40px; height: 32px; padding: 2px; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; }
+  input:focus, select:focus { outline: none; border-color: #2d5a8b; }
+  button { padding: 8px 14px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: #2d5a8b; color: white; }
+  .btn-primary:hover:not(:disabled) { background: #1a3a5c; }
+  .btn-secondary { background: #e5e7eb; color: #374151; }
+  .btn-secondary:hover:not(:disabled) { background: #d1d5db; }
+  .btn-success { background: #10b981; color: white; }
+  .btn-success:hover:not(:disabled) { background: #059669; }
+  .btn-warning { background: #f59e0b; color: white; }
+  .btn-warning:hover:not(:disabled) { background: #d97706; }
+  .btn-danger { background: #ef4444; color: white; padding: 4px 8px; font-size: 11px; }
+  .btn-danger:hover:not(:disabled) { background: #dc2626; }
+  .btn-sm { padding: 4px 8px; font-size: 11px; }
+
+  table.holes { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.holes th, table.holes td { padding: 5px 3px; text-align: center; border-bottom: 1px solid #e5e7eb; }
+  table.holes th { background: #f3f4f6; color: #374151; font-weight: 600; font-size: 11px; }
+  table.holes input, table.holes select { width: 100%; padding: 3px 4px; font-size: 12px; }
+
+  .summary { font-size: 13px; }
+  .summary .big { font-size: 24px; font-weight: 700; color: #1a3a5c; text-align: center; padding: 12px; background: #eff6ff; border-radius: 8px; margin: 8px 0; }
+  .summary table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+  .summary th { background: #2d5a8b; color: white; padding: 6px; font-size: 11px; }
+  .summary td { padding: 5px 6px; border-bottom: 1px solid #e5e7eb; text-align: right; }
+  .summary td:first-child { text-align: center; font-weight: 600; }
+
+  canvas.main { width: 100%; height: 520px; border: 1px solid #d1d5db; border-radius: 8px; background: #0a0a14; display: block; touch-action: none; }
+  canvas.main.crosshair { cursor: crosshair; }
+  canvas.main.scaling { cursor: cell; }
+  canvas.main.panning { cursor: grab; }
+  canvas.main.measuring { cursor: cell; }
+
+  .hint { font-size: 11px; color: #6b7280; margin-top: 6px; line-height: 1.5; }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .row label { margin-bottom: 0; min-width: 80px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .mode-toggle { display: flex; gap: 4px; background: #f3f4f6; padding: 3px; border-radius: 6px; flex-wrap: wrap; }
+  .mode-toggle button { flex: 1 1 0; min-width: 60px; padding: 6px; font-size: 11px; font-weight: 600; background: transparent; color: #6b7280; }
+  .mode-toggle button.active { background: white; color: #1a3a5c; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+
+  .warn { background: #fef3c7; color: #92400e; padding: 8px; border-radius: 6px; font-size: 12px; margin-top: 8px; }
+  .info-box { background: #eff6ff; border-left: 3px solid #2d5a8b; padding: 8px 10px; font-size: 12px; color: #1a3a5c; margin-bottom: 10px; border-radius: 0 6px 6px 0; }
+
+  .dist-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .dist-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+
+  .toolbar { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; padding: 8px; background: #f3f4f6; border-radius: 6px; align-items: center; }
+  .toolbar .divider { width: 1px; background: #d1d5db; margin: 0 4px; align-self: stretch; }
+  .toolbar .zoom-info { font-size: 11px; color: #6b7280; margin-left: 4px; }
+
+  .annotation-tool { background: #ddd6fe; color: #5b21b6; padding: 6px 12px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 600; border: 1px solid transparent; }
+  .annotation-tool.active { background: #8b5cf6; color: white; }
+
+  .scale-panel { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+  .scale-panel h3 { margin: 0 0 8px; font-size: 13px; color: #92400e; }
+  .measure-panel { background: #dbeafe; border: 1px solid #3b82f6; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+  .measure-panel h3 { margin: 0 0 8px; font-size: 13px; color: #1e40af; }
+  .pattern-panel { background: #f3e8ff; border: 1px solid #a855f7; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+  .pattern-panel h3 { margin: 0 0 8px; font-size: 13px; color: #6b21a8; }
+
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+  .modal { background: white; border-radius: 12px; padding: 20px; max-width: 500px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto; }
+  .modal h3 { margin: 0 0 12px; font-size: 16px; color: #1a3a5c; }
+  .modal-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+  .preset-section { background: #f0fdf4; border: 1px solid #10b981; border-radius: 6px; padding: 10px; margin-top: 10px; }
+  .preset-section h4 { margin: 0 0 8px; font-size: 12px; color: #065f46; }
+  .preset-row { display: flex; gap: 4px; margin-bottom: 4px; }
+  .preset-row input { flex: 1; }
+
+  .save-section { background: #eef2ff; border: 1px solid #6366f1; border-radius: 6px; padding: 10px; margin-top: 10px; }
+  .save-section h4 { margin: 0 0 8px; font-size: 12px; color: #3730a3; }
+
+  .pack-section { background: #fef2f8; border: 1px solid #ec4899; border-radius: 6px; padding: 10px; margin-top: 10px; }
+  .pack-section h4 { margin: 0 0 8px; font-size: 12px; color: #9d174d; }
+
+  .pack-chip { display: inline-flex; gap: 2px; align-items: center; background: white; padding: 2px 6px; border-radius: 3px; font-size: 11px; border: 1px solid #d1d5db; margin: 2px; }
+  .pack-chip button { padding: 0; width: 14px; height: 14px; background: transparent; color: #ef4444; font-size: 12px; }
+
+  .intensity-control { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #f9fafb; border-radius: 6px; font-size: 11px; }
+
+  .auto-save-indicator {
+    position: fixed; top: 10px; right: 10px;
+    background: rgba(16, 185, 129, 0.95); color: white;
+    padding: 4px 10px; border-radius: 4px; font-size: 11px;
+    font-weight: 600; z-index: 999; pointer-events: none;
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .auto-save-indicator.show { opacity: 1; }
+
+  details.collapsible {
+    background: white; border-radius: 6px; padding: 6px 10px;
+    border: 1px solid #e5e7eb; margin-top: 6px;
+  }
+  details.collapsible summary {
+    cursor: pointer; font-size: 12px; font-weight: 600; color: #374151;
+    user-select: none; padding: 2px 0;
+  }
+  details.collapsible[open] summary { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+// ============ localStorage Key ============
+const LS_KEY = 'rencoreTool_v9_autosave';
+const LS_KEY_PROJECTS = 'rencoreTool_v9_projects';
+const LS_KEY_PRESETS = 'rencoreTool_v9_presets';
+
+// ============ 計算 ============
+function computeVolumes(holes, gridN = 500) {
+  if (holes.length === 0) return null;
+  const margin = Math.max(...holes.map(h => h.diameter / 2)) + 5;
+  const xs = holes.map(h => h.x), ys = holes.map(h => h.y);
+  const xmin = Math.min(...xs) - margin, xmax = Math.max(...xs) + margin;
+  const ymin = Math.min(...ys) - margin, ymax = Math.max(...ys) + margin;
+  const dx = (xmax - xmin) / gridN, dy = (ymax - ymin) / gridN;
+  const cellArea = dx * dy;
+  const sorted = [...holes].map((h, i) => ({ ...h, origIdx: i })).sort((a, b) => b.depth - a.depth);
+  const cellCount = new Array(holes.length).fill(0);
+  for (let iy = 0; iy < gridN; iy++) {
+    const py = ymin + (iy + 0.5) * dy;
+    for (let ix = 0; ix < gridN; ix++) {
+      const px = xmin + (ix + 0.5) * dx;
+      for (const h of sorted) {
+        const r = h.diameter / 2;
+        if ((px - h.x) ** 2 + (py - h.y) ** 2 <= r * r) { cellCount[h.origIdx]++; break; }
+      }
+    }
+  }
+  const results = holes.map((h, i) => {
+    const area = cellCount[i] * cellArea;
+    return { ...h, idx: i, area, volume: area * h.depth };
+  });
+  return {
+    results,
+    totalArea: results.reduce((s, r) => s + r.area, 0),
+    totalVolume: results.reduce((s, r) => s + r.volume, 0),
+    bounds: { xmin, xmax, ymin, ymax },
+  };
+}
+
+function triangulate(A, B, distA, distB, side = 'up') {
+  const dx = B.x - A.x, dy = B.y - A.y;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  if (d === 0) return null;
+  if (d > distA + distB || d < Math.abs(distA - distB)) return null;
+  const a = (distA * distA - distB * distB + d * d) / (2 * d);
+  const h2 = distA * distA - a * a;
+  if (h2 < 0) return null;
+  const h = Math.sqrt(h2);
+  const mx = A.x + a * dx / d, my = A.y + a * dy / d;
+  const sign = side === 'up' ? 1 : -1;
+  return { x: mx + sign * h * (-dy) / d, y: my + sign * h * dx / d };
+}
+
+function circleFrom3Points(p1, p2, p3) {
+  const ax = p1.x, ay = p1.y, bx = p2.x, by = p2.y, cx = p3.x, cy = p3.y;
+  const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+  if (Math.abs(d) < 1e-10) return null;
+  const ux = ((ax*ax + ay*ay) * (by - cy) + (bx*bx + by*by) * (cy - ay) + (cx*cx + cy*cy) * (ay - by)) / d;
+  const uy = ((ax*ax + ay*ay) * (cx - bx) + (bx*bx + by*by) * (ax - cx) + (cx*cx + cy*cy) * (bx - ax)) / d;
+  const r = Math.hypot(ux - ax, uy - ay);
+  return { cx: ux, cy: uy, r };
+}
+
+function layoutLabels(results, toScreen, scale, dpr) {
+  if (!results || results.length === 0) return [];
+  const directions = [
+    { angle: -Math.PI / 4, mult: 0.9 }, { angle: Math.PI / 4, mult: 0.9 },
+    { angle: 3 * Math.PI / 4, mult: 0.9 }, { angle: -3 * Math.PI / 4, mult: 0.9 },
+    { angle: -Math.PI / 2, mult: 1.1 }, { angle: Math.PI / 2, mult: 1.1 },
+    { angle: 0, mult: 1.2 }, { angle: Math.PI, mult: 1.2 },
+  ];
+  const labelW = 150 * dpr, labelH = 36 * dpr;
+  const placed = [];
+  const sorted = [...results].map((r, i) => ({ ...r, origIdx: i })).sort((a, b) => b.depth - a.depth);
+  for (const h of sorted) {
+    const [cx, cy] = toScreen(h.x, h.y);
+    const sr = (h.diameter / 2) * scale;
+    let bestRect = null, bestScore = -Infinity;
+    for (const dir of directions) {
+      const dist = sr + 20 * dpr;
+      const lx = cx + Math.cos(dir.angle) * dist * dir.mult;
+      const ly = cy + Math.sin(dir.angle) * dist * dir.mult;
+      let ax;
+      if (Math.cos(dir.angle) >= 0.3) ax = lx;
+      else if (Math.cos(dir.angle) <= -0.3) ax = lx - labelW;
+      else ax = lx - labelW / 2;
+      const ay = ly - labelH / 2;
+      const rect = { x: ax, y: ay, w: labelW, h: labelH };
+      let score = 0;
+      for (const p of placed) {
+        const ddx = Math.max(0, Math.max(rect.x - (p.x + p.w), p.x - (rect.x + rect.w)));
+        const ddy = Math.max(0, Math.max(rect.y - (p.y + p.h), p.y - (rect.y + rect.h)));
+        if (ddx === 0 && ddy === 0) score -= 1000;
+      }
+      for (const other of results) {
+        if (other.idx === h.origIdx) continue;
+        const [ox, oy] = toScreen(other.x, other.y);
+        const orr = (other.diameter / 2) * scale;
+        const rcx = rect.x + rect.w / 2, rcy = rect.y + rect.h / 2;
+        if (Math.sqrt((ox - rcx) ** 2 + (oy - rcy) ** 2) < orr) score -= 500;
+      }
+      if (rect.x < 0 || rect.y < 0) score -= 20;
+      score -= Math.hypot(cx - (rect.x + rect.w / 2), cy - (rect.y + rect.h / 2)) * 0.01;
+      if (score > bestScore) {
+        bestScore = score;
+        bestRect = { ...rect, anchorSide: Math.cos(dir.angle) <= -0.3 ? 'right' : 'left', origIdx: h.origIdx };
+      }
+    }
+    placed.push(bestRect);
+  }
+  const out = new Array(results.length);
+  for (const p of placed) out[p.origIdx] = p;
+  return out;
+}
+
+// ============ SortableCard ============
+function SortableCard({ id, title, children, onMove }) {
+  const [dragOver, setDragOver] = useState(false);
+  const handleDragStart = (e) => { e.dataTransfer.setData('text/plain', id); e.dataTransfer.effectAllowed = 'move'; };
+  const handleDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOver(true); };
+  const handleDragLeave = () => setDragOver(false);
+  const handleDrop = (e) => {
+    e.preventDefault(); setDragOver(false);
+    const srcId = e.dataTransfer.getData('text/plain');
+    if (srcId && srcId !== id) onMove(srcId, id);
+  };
+  return (
+    <div className={`card ${dragOver ? 'drag-over' : ''}`} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+      <div className="card-header">
+        <span className="drag-handle" draggable onDragStart={handleDragStart} title="ドラッグして並べ替え">⋮⋮</span>
+        <h2>{title}</h2>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+const FONT_OPTIONS = [
+  { name: 'Sans-serif', value: 'sans-serif' },
+  { name: 'Serif (明朝)', value: 'serif' },
+  { name: 'Monospace (等幅)', value: 'monospace' },
+  { name: 'ヒラギノ角ゴ', value: '"Hiragino Kaku Gothic ProN", "Hiragino Sans", sans-serif' },
+  { name: 'メイリオ', value: 'Meiryo, sans-serif' },
+  { name: '游ゴシック', value: '"Yu Gothic", sans-serif' },
+];
+
+function TextEditModal({ initial, onCancel, onSave }) {
+  const [text, setText] = useState(initial?.text || 'テキスト');
+  const [color, setColor] = useState(initial?.color || '#ffeb3b');
+  const [bgColor, setBgColor] = useState(initial?.bgColor || '#000000');
+  const [bgOpacity, setBgOpacity] = useState(initial?.bgOpacity ?? 0.75);
+  const [fontSize, setFontSize] = useState(initial?.fontSize || 14);
+  const [fontFamily, setFontFamily] = useState(initial?.fontFamily || 'sans-serif');
+  const [bold, setBold] = useState(initial?.bold ?? true);
+  const inputRef = useRef(null);
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100); }, []);
+  const handleSave = () => {
+    if (!text.trim()) { alert('テキストを入力してください'); return; }
+    onSave({ text, color, bgColor, bgOpacity, fontSize, fontFamily, bold });
+  };
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h3>📝 テキスト編集</h3>
+        <div className="row"><label>テキスト</label>
+          <input ref={inputRef} type="text" value={text} onChange={e => setText(e.target.value)}
+                 onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') onCancel(); }} />
+        </div>
+        <div className="dist-row">
+          <div><label>文字色</label>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <input type="color" value={color} onChange={e => setColor(e.target.value)} />
+              <input type="text" value={color} onChange={e => setColor(e.target.value)} style={{ flex: 1 }} />
+            </div>
+          </div>
+          <div><label>背景色</label>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <input type="color" value={bgColor} onChange={e => setBgColor(e.target.value)} />
+              <input type="text" value={bgColor} onChange={e => setBgColor(e.target.value)} style={{ flex: 1 }} />
+            </div>
+          </div>
+        </div>
+        <div className="dist-row">
+          <div><label>背景透明度 ({Math.round(bgOpacity * 100)}%)</label>
+            <input type="range" min="0" max="1" step="0.05" value={bgOpacity} onChange={e => setBgOpacity(parseFloat(e.target.value))} />
+          </div>
+          <div><label>サイズ (px)</label>
+            <input type="number" value={fontSize} min="8" max="72" onChange={e => setFontSize(parseFloat(e.target.value) || 14)} />
+          </div>
+        </div>
+        <div className="row"><label>フォント</label>
+          <select value={fontFamily} onChange={e => setFontFamily(e.target.value)} style={{ fontFamily }}>
+            {FONT_OPTIONS.map(f => <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>{f.name}</option>)}
+          </select>
+        </div>
+        <div className="row"><label>太字</label>
+          <input type="checkbox" checked={bold} onChange={e => setBold(e.target.checked)} style={{ width: 'auto' }} />
+        </div>
+        <div style={{ padding: 16, borderRadius: 6, background: '#0a0a14', textAlign: 'center', marginTop: 8 }}>
+          <span style={{
+            display: 'inline-block', padding: '4px 10px',
+            fontFamily, fontSize: `${fontSize}px`, color,
+            background: `rgba(${parseInt(bgColor.slice(1,3),16)}, ${parseInt(bgColor.slice(3,5),16)}, ${parseInt(bgColor.slice(5,7),16)}, ${bgOpacity})`,
+            border: `1.5px solid ${color}`, fontWeight: bold ? 'bold' : 'normal',
+          }}>{text}</span>
+        </div>
+        <div className="modal-buttons">
+          <button className="btn-secondary btn-sm" onClick={onCancel}>キャンセル</button>
+          <button className="btn-primary btn-sm" onClick={handleSave}>保存 (Enter)</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DistanceInputModal({ title, message, onCancel, onSave, defaultValue = '100', unit = 'mm' }) {
+  const [value, setValue] = useState(String(defaultValue));
+  const inputRef = useRef(null);
+  useEffect(() => { setTimeout(() => { inputRef.current?.focus(); inputRef.current?.select(); }, 100); }, []);
+  const handleSave = () => {
+    const v = parseFloat(value);
+    if (isNaN(v) || v <= 0) { alert('正の数値を入力してください'); return; }
+    onSave(v);
+  };
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h3>{title}</h3>
+        <div style={{ fontSize: 13, color: '#555', marginBottom: 12, whiteSpace: 'pre-line' }}>{message}</div>
+        <div className="row" style={{ alignItems: 'flex-end' }}>
+          <input ref={inputRef} type="number" step="0.1" value={value} onChange={e => setValue(e.target.value)}
+                 onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') onCancel(); }} />
+          <span style={{ fontSize: 14, color: '#555', minWidth: 30 }}>{unit}</span>
+        </div>
+        <div className="modal-buttons">
+          <button className="btn-secondary btn-sm" onClick={onCancel}>キャンセル</button>
+          <button className="btn-primary btn-sm" onClick={handleSave}>OK (Enter)</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// パック編集モーダル
+function PackEditModal({ initial, allPresets, onCancel, onSave, onDelete }) {
+  const [name, setName] = useState(initial?.name || '');
+  const [items, setItems] = useState(initial?.items || []);
+  const [newItem, setNewItem] = useState('');
+  const addItem = () => {
+    const v = newItem.trim();
+    if (!v || items.includes(v)) return;
+    setItems([...items, v]);
+    setNewItem('');
+  };
+  const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
+  const handleSave = () => {
+    if (!name.trim()) { alert('パック名を入力してください'); return; }
+    if (items.length === 0) { alert('1つ以上のアイテムを追加してください'); return; }
+    onSave({ name: name.trim(), items });
+  };
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h3>📦 パック編集</h3>
+        <div className="row"><label>パック名</label>
+          <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="例: 1系, 3系, Aシリーズ" />
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <label>アイテム ({items.length}個)</label>
+          <div style={{ padding: 8, background: '#f9fafb', borderRadius: 6, minHeight: 40 }}>
+            {items.length === 0 && <span style={{ color: '#9ca3af', fontSize: 12 }}>まだアイテムがありません</span>}
+            {items.map((v, i) => (
+              <span key={i} className="pack-chip">
+                {v}
+                <button onClick={() => removeItem(i)}>×</button>
+              </span>
+            ))}
+          </div>
+          <div className="preset-row" style={{ marginTop: 8 }}>
+            <input type="text" value={newItem} onChange={e => setNewItem(e.target.value)}
+                   onKeyDown={e => { if (e.key === 'Enter') addItem(); }}
+                   placeholder="例: 1-1" list="preset-suggestions" />
+            <datalist id="preset-suggestions">
+              {allPresets.map(p => <option key={p} value={p} />)}
+            </datalist>
+            <button className="btn-success btn-sm" onClick={addItem}>追加</button>
+          </div>
+        </div>
+        <div className="modal-buttons">
+          {initial && <button className="btn-danger btn-sm" onClick={onDelete} style={{ marginRight: 'auto' }}>🗑️ パック削除</button>}
+          <button className="btn-secondary btn-sm" onClick={onCancel}>キャンセル</button>
+          <button className="btn-primary btn-sm" onClick={handleSave}>保存</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// プロジェクト管理モーダル
+function ProjectManagerModal({ projects, currentData, onClose, onLoad, onSave, onDelete, onExportFile, onImportFile, onExportSingle }) {
+  const [newName, setNewName] = useState('');
+  const fileInputRef = useRef(null);
+  const handleSave = () => {
+    const n = newName.trim();
+    if (!n) { alert('プロジェクト名を入力してください'); return; }
+    if (projects[n]) {
+      if (!confirm(`"${n}" は既に存在します。上書きしますか？`)) return;
+    }
+    onSave(n);
+    setNewName('');
+  };
+  const handleFileSelected = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    onImportFile(file);
+    e.target.value = '';
+  };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h3>💾 プロジェクト管理</h3>
+
+        <div style={{ padding: 10, background: '#eef2ff', borderRadius: 6, marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#3730a3', marginBottom: 6 }}>📦 現在の状態を保存（ブラウザ内）</div>
+          <div className="preset-row">
+            <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
+                   placeholder="例: 現場A_20260423" onKeyDown={e => { if (e.key === 'Enter') handleSave(); }} />
+            <button className="btn-success btn-sm" onClick={handleSave}>💾 保存</button>
+          </div>
+          <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+            穴数:{currentData.holes.length}, 注釈:{currentData.annotations.length}
+          </div>
+        </div>
+
+        {/* PCに保存・PCから読込 */}
+        <div style={{ padding: 10, background: '#fef3c7', borderRadius: 6, marginBottom: 12, border: '1px solid #f59e0b' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#92400e', marginBottom: 6 }}>
+            📁 ファイルとして保存・読込（PC / クラウド）
+          </div>
+          <div style={{ fontSize: 11, color: '#78350f', marginBottom: 8, lineHeight: 1.5 }}>
+            ・💾 ダウンロード: 現在の状態を .json ファイルでPC/クラウドに保存<br />
+            ・📂 ファイル選択: 保存した .json を開いて状態を復元<br />
+            <span style={{ fontSize: 10, color: '#92400e' }}>💡 iCloud Drive / Google Drive / Dropbox などのクラウドフォルダに保存すれば共有可能</span>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn-warning btn-sm" onClick={onExportFile} style={{ flex: 1 }}>
+              💾 .jsonでダウンロード
+            </button>
+            <button className="btn-warning btn-sm" onClick={() => fileInputRef.current?.click()} style={{ flex: 1 }}>
+              📂 .jsonから読込
+            </button>
+            <input ref={fileInputRef} type="file" accept=".json,application/json" onChange={handleFileSelected} style={{ display: 'none' }} />
+          </div>
+        </div>
+
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#3730a3', marginBottom: 6 }}>
+          📦 ブラウザ内 保存済みプロジェクト ({Object.keys(projects).length}件)
+        </div>
+        <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+          {Object.keys(projects).length === 0 && (
+            <div style={{ fontSize: 12, color: '#9ca3af', padding: 8, textAlign: 'center' }}>まだ保存されたプロジェクトがありません</div>
+          )}
+          {Object.entries(projects).sort((a, b) => (b[1].savedAt || 0) - (a[1].savedAt || 0)).map(([name, data]) => (
+            <div key={name} style={{ padding: 8, background: '#f9fafb', borderRadius: 6, marginBottom: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 100%', minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
+                <div style={{ fontSize: 11, color: '#6b7280' }}>
+                  穴{data.holes?.length || 0}個 / 注釈{data.annotations?.length || 0}個 /
+                  {data.savedAt ? ' ' + new Date(data.savedAt).toLocaleString('ja-JP') : ''}
+                </div>
+              </div>
+              <button className="btn-primary btn-sm" onClick={() => onLoad(name)}>📂 読込</button>
+              <button className="btn-warning btn-sm" onClick={() => onExportSingle(name)} title="このプロジェクトを.jsonでダウンロード">💾 .json</button>
+              <button className="btn-danger btn-sm" onClick={() => { if (confirm(`"${name}" を削除しますか？`)) onDelete(name); }}>×</button>
+            </div>
+          ))}
+        </div>
+
+        <div className="modal-buttons">
+          <button className="btn-secondary btn-sm" onClick={onClose}>閉じる</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ メイン ============
+function App() {
+  // ---- プリセット & パック ----
+  const [holeNumberPresets, setHoleNumberPresets] = useState(['3-3', '3-4', '3-5', '3-6', '3-7']);
+  const [diameterPresets, setDiameterPresets] = useState([40, 50, 65, 80, 100]);
+  const [newHolePreset, setNewHolePreset] = useState('');
+  const [newDiaPreset, setNewDiaPreset] = useState('');
+
+  // パック: [{name: '1系', items: ['1-1', '1-2', '1-3']}, ...]
+  const [holeNumberPacks, setHoleNumberPacks] = useState([
+    { name: '1系', items: ['1-1', '1-2', '1-3'] },
+    { name: '3系', items: ['3-3', '3-4', '3-5'] },
+  ]);
+  // 現在アクティブなパック: null = すべて表示 / 'pack-name' = そのパックだけ
+  const [activePack, setActivePack] = useState(null);
+  const [packModal, setPackModal] = useState(null); // {mode:'create'|'edit', idx, initial}
+
+  // 現在のドロップダウンに表示する穴No一覧
+  const activePresets = useMemo(() => {
+    if (activePack === null) return holeNumberPresets;
+    const pack = holeNumberPacks.find(p => p.name === activePack);
+    return pack ? pack.items : holeNumberPresets;
+  }, [activePack, holeNumberPresets, holeNumberPacks]);
+
+  const [defaultDiameter, setDefaultDiameter] = useState(65);
+  const [holes, setHoles] = useState([
+    { name: '3-3', x: 0, y: 0, depth: 209, diameter: 65, lockedTo: null },
+    { name: '3-4', x: 15, y: 0, depth: 238, diameter: 65, lockedTo: null },
+    { name: '3-5', x: 15.2, y: 12.99, depth: 242, diameter: 65, lockedTo: null },
+  ]);
+
+  const historyRef = useRef([]);
+  const [canUndo, setCanUndo] = useState(false);
+
+  const [inputMode, setInputMode] = useState('direct');
+  const [clickDepth, setClickDepth] = useState(200);
+  const [clickDiameter, setClickDiameter] = useState(65);
+  const [clickName, setClickName] = useState('');
+
+  const [distForm, setDistForm] = useState({
+    name: '', depth: 200, diameter: 65,
+    refAIdx: 0, distA: 20, refBIdx: 1, distB: 15, side: 'up',
+  });
+
+  const [traceImage, setTraceImage] = useState(null);
+  const [traceImageDataUrl, setTraceImageDataUrl] = useState(null);
+  const [traceOpacity, setTraceOpacity] = useState(0.6);
+  const [traceScale, setTraceScale] = useState(null);
+  const [measureStep, setMeasureStep] = useState(null);
+  const [tempPoints, setTempPoints] = useState([]);
+  // ドラッグで円を配置するとき、中心点と現在のマウス位置
+  const [dragCircle, setDragCircle] = useState(null); // {cx,cy,r} in 実mm座標
+  const dragCircleRef = useRef(null);
+
+  const [distanceModal, setDistanceModal] = useState(null);
+  const [imagePattern, setImagePattern] = useState('pattern1');
+  // pattern2 の方式: '3points' = 3点クリック / 'drag' = クリック&ドラッグ
+  const [pattern2Mode, setPattern2Mode] = useState('drag');
+  const [colorIntensity, setColorIntensity] = useState(1.5);
+  // 表示モード: 'full' = 全円輪郭 / 'clipped' = 担当領域のみ（食われた線は消す）
+  const [displayMode, setDisplayMode] = useState('clipped');
+
+  const [viewZoom, setViewZoom] = useState(1);
+  const [viewPan, setViewPan] = useState({ x: 0, y: 0 });
+  const [panMode, setPanMode] = useState(false);
+  const [distanceLockMode, setDistanceLockMode] = useState(false);
+  const [rotateMode, setRotateMode] = useState(false);
+  const isRotatingRef = useRef(false);
+  const rotateStartRef = useRef(null);
+
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef(null);
+  const pinchRef = useRef(null);
+
+  const [annotations, setAnnotations] = useState([]);
+  const [textModal, setTextModal] = useState(null);
+
+  const [dragTarget, setDragTarget] = useState(null);
+  const dragTargetRef = useRef(null);
+  const dragStartSnapshotRef = useRef(null);
+  const dragOriginRef = useRef(null);
+
+  const canvasRef = useRef(null);
+  const transformRef = useRef(null);
+
+  const [panelOrder, setPanelOrder] = useState(['common', 'list', 'mode', 'canvas', 'result']);
+  const movePanel = (srcId, dstId) => {
+    const copy = [...panelOrder];
+    const si = copy.indexOf(srcId), di = copy.indexOf(dstId);
+    if (si < 0 || di < 0) return;
+    copy.splice(si, 1); copy.splice(di, 0, srcId);
+    setPanelOrder(copy);
+  };
+
+  // プロジェクト管理
+  const [projects, setProjects] = useState({});
+  const [projectModalOpen, setProjectModalOpen] = useState(false);
+
+  const [autoSaveStatus, setAutoSaveStatus] = useState(''); // 自動保存インジケータ
+  const autoSaveTimerRef = useRef(null);
+  const initLoadedRef = useRef(false);
+
+  // ============ 起動時に復元 ============
+  useEffect(() => {
+    if (initLoadedRef.current) return;
+    initLoadedRef.current = true;
+    try {
+      // プリセット
+      const ps = localStorage.getItem(LS_KEY_PRESETS);
+      if (ps) {
+        const p = JSON.parse(ps);
+        if (p.holeNumberPresets) setHoleNumberPresets(p.holeNumberPresets);
+        if (p.diameterPresets) setDiameterPresets(p.diameterPresets);
+        if (p.holeNumberPacks) setHoleNumberPacks(p.holeNumberPacks);
+      }
+      // プロジェクト一覧
+      const pj = localStorage.getItem(LS_KEY_PROJECTS);
+      if (pj) setProjects(JSON.parse(pj));
+      // 自動保存
+      const as = localStorage.getItem(LS_KEY);
+      if (as) {
+        const data = JSON.parse(as);
+        if (data.holes) setHoles(data.holes);
+        if (data.annotations) setAnnotations(data.annotations);
+        if (data.defaultDiameter) setDefaultDiameter(data.defaultDiameter);
+        if (data.clickDepth != null) setClickDepth(data.clickDepth);
+        if (data.clickDiameter != null) setClickDiameter(data.clickDiameter);
+        if (data.colorIntensity != null) setColorIntensity(data.colorIntensity);
+        if (data.panelOrder) setPanelOrder(data.panelOrder);
+        if (data.activePack !== undefined) setActivePack(data.activePack);
+        if (data.displayMode) setDisplayMode(data.displayMode);
+      }
+    } catch (err) {
+      console.warn('復元エラー', err);
+    }
+  }, []);
+
+  // ============ プリセット変更時に保存 ============
+  useEffect(() => {
+    if (!initLoadedRef.current) return;
+    try {
+      localStorage.setItem(LS_KEY_PRESETS, JSON.stringify({
+        holeNumberPresets, diameterPresets, holeNumberPacks,
+      }));
+    } catch (_) {}
+  }, [holeNumberPresets, diameterPresets, holeNumberPacks]);
+
+  // ============ 自動保存 (debounced) ============
+  useEffect(() => {
+    if (!initLoadedRef.current) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      try {
+        const payload = {
+          holes, annotations, defaultDiameter,
+          clickDepth, clickDiameter,
+          colorIntensity, panelOrder, activePack, displayMode,
+          savedAt: Date.now(),
+        };
+        localStorage.setItem(LS_KEY, JSON.stringify(payload));
+        setAutoSaveStatus('💾 自動保存しました');
+        setTimeout(() => setAutoSaveStatus(''), 1500);
+      } catch (err) {
+        console.warn('自動保存失敗', err);
+      }
+    }, 800);
+    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
+  }, [holes, annotations, defaultDiameter, clickDepth, clickDiameter, colorIntensity, panelOrder, activePack, displayMode]);
+
+  const gridN = dragTarget !== null ? 200 : 500;
+  const calc = useMemo(() => computeVolumes(holes, gridN), [holes, gridN]);
+
+  // ============ プロジェクト操作 ============
+  const saveProject = (name) => {
+    const data = {
+      holes, annotations, defaultDiameter,
+      clickDepth, clickDiameter, colorIntensity,
+      savedAt: Date.now(),
+    };
+    const newProjects = { ...projects, [name]: data };
+    setProjects(newProjects);
+    try { localStorage.setItem(LS_KEY_PROJECTS, JSON.stringify(newProjects)); } catch (_) {}
+    setAutoSaveStatus(`💾 "${name}" に保存`);
+    setTimeout(() => setAutoSaveStatus(''), 2000);
+  };
+  const loadProject = (name) => {
+    const data = projects[name];
+    if (!data) return;
+    pushHistory();
+    if (data.holes) setHoles(data.holes);
+    if (data.annotations) setAnnotations(data.annotations);
+    if (data.defaultDiameter) setDefaultDiameter(data.defaultDiameter);
+    if (data.clickDepth != null) setClickDepth(data.clickDepth);
+    if (data.clickDiameter != null) setClickDiameter(data.clickDiameter);
+    if (data.colorIntensity != null) setColorIntensity(data.colorIntensity);
+    setProjectModalOpen(false);
+    setAutoSaveStatus(`📂 "${name}" 読込完了`);
+    setTimeout(() => setAutoSaveStatus(''), 2000);
+  };
+  const deleteProject = (name) => {
+    const copy = { ...projects };
+    delete copy[name];
+    setProjects(copy);
+    try { localStorage.setItem(LS_KEY_PROJECTS, JSON.stringify(copy)); } catch (_) {}
+  };
+
+  // 現在の状態を .json でダウンロード
+  const exportProjectFile = () => {
+    const data = {
+      version: 'v18',
+      type: 'rencore-project',
+      exportedAt: new Date().toISOString(),
+      data: {
+        holes,
+        annotations,
+        defaultDiameter,
+        clickDepth,
+        clickDiameter,
+        colorIntensity,
+        displayMode,
+        holeNumberPresets,
+        diameterPresets,
+        holeNumberPacks,
+        activePack,
+      }
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    a.href = url;
+    a.download = `連コア_${holes.length}穴_${ts}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setAutoSaveStatus('💾 .jsonをダウンロードしました');
+    setTimeout(() => setAutoSaveStatus(''), 2000);
+  };
+
+  // 個別プロジェクトを .json でダウンロード
+  const exportSingleProject = (name) => {
+    const proj = projects[name];
+    if (!proj) return;
+    const data = {
+      version: 'v18',
+      type: 'rencore-project',
+      projectName: name,
+      exportedAt: new Date().toISOString(),
+      data: { ...proj },
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeName = name.replace(/[\\\/:*?"<>|]/g, '_');
+    a.href = url;
+    a.download = `連コア_${safeName}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setAutoSaveStatus(`💾 "${name}" をダウンロード`);
+    setTimeout(() => setAutoSaveStatus(''), 2000);
+  };
+
+  // .json ファイルから読み込み
+  const importProjectFile = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const json = JSON.parse(e.target.result);
+        // フォーマット検証
+        if (json.type !== 'rencore-project' || !json.data) {
+          alert('連コア体積計算ツールのプロジェクトファイルではありません');
+          return;
+        }
+        const d = json.data;
+        if (!confirm(`プロジェクトを読み込みますか？\n\n穴数: ${d.holes?.length || 0}個\n注釈: ${d.annotations?.length || 0}個\n${json.projectName ? '名前: ' + json.projectName : ''}\n\n現在の編集内容は上書きされます`)) return;
+        pushHistory();
+        if (d.holes) setHoles(d.holes);
+        if (d.annotations) setAnnotations(d.annotations);
+        if (d.defaultDiameter) setDefaultDiameter(d.defaultDiameter);
+        if (d.clickDepth != null) setClickDepth(d.clickDepth);
+        if (d.clickDiameter != null) setClickDiameter(d.clickDiameter);
+        if (d.colorIntensity != null) setColorIntensity(d.colorIntensity);
+        if (d.displayMode) setDisplayMode(d.displayMode);
+        if (d.holeNumberPresets) setHoleNumberPresets(d.holeNumberPresets);
+        if (d.diameterPresets) setDiameterPresets(d.diameterPresets);
+        if (d.holeNumberPacks) setHoleNumberPacks(d.holeNumberPacks);
+        if (d.activePack !== undefined) setActivePack(d.activePack);
+        setProjectModalOpen(false);
+        setAutoSaveStatus('📂 ファイルから読み込みました');
+        setTimeout(() => setAutoSaveStatus(''), 2000);
+      } catch (err) {
+        alert('ファイル読み込みエラー: ' + err.message);
+      }
+    };
+    reader.onerror = () => alert('ファイルの読み込みに失敗しました');
+    reader.readAsText(file);
+  };
+
+  // ============ ユーティリティ ============
+  const captureSnapshot = () => ({ holes: JSON.parse(JSON.stringify(holes)), annotations: JSON.parse(JSON.stringify(annotations)) });
+  const pushHistory = useCallback(() => {
+    historyRef.current.push(JSON.parse(JSON.stringify({ holes, annotations })));
+    if (historyRef.current.length > 50) historyRef.current.shift();
+    setCanUndo(true);
+  }, [holes, annotations]);
+  const undo = () => {
+    if (historyRef.current.length === 0) return;
+    const prev = historyRef.current.pop();
+    setHoles(prev.holes);
+    setAnnotations(prev.annotations);
+    setCanUndo(historyRef.current.length > 0);
+  };
+
+  // プリセット操作
+  const addHoleNumberPreset = () => {
+    const v = newHolePreset.trim();
+    if (!v) return;
+    if (holeNumberPresets.includes(v)) { alert('既に登録済みです'); return; }
+    setHoleNumberPresets([...holeNumberPresets, v]);
+    setNewHolePreset('');
+  };
+  const removeHoleNumberPreset = (v) => setHoleNumberPresets(holeNumberPresets.filter(p => p !== v));
+  const addDiameterPreset = () => {
+    const v = parseFloat(newDiaPreset);
+    if (isNaN(v) || v <= 0) return;
+    if (diameterPresets.includes(v)) { alert('既に登録済みです'); return; }
+    setDiameterPresets([...diameterPresets, v].sort((a, b) => a - b));
+    setNewDiaPreset('');
+  };
+  const removeDiameterPreset = (v) => setDiameterPresets(diameterPresets.filter(p => p !== v));
+
+  // パック操作
+  const savePack = (data) => {
+    if (packModal.mode === 'create') {
+      if (holeNumberPacks.some(p => p.name === data.name)) { alert('同名のパックが既に存在します'); return; }
+      setHoleNumberPacks([...holeNumberPacks, data]);
+    } else {
+      const copy = [...holeNumberPacks];
+      copy[packModal.idx] = data;
+      setHoleNumberPacks(copy);
+    }
+    // 新しく追加された穴No も全体プリセットにも追加（重複なし）
+    const merged = [...new Set([...holeNumberPresets, ...data.items])];
+    setHoleNumberPresets(merged);
+    setPackModal(null);
+  };
+  const deletePack = () => {
+    if (packModal.mode !== 'edit') return;
+    setHoleNumberPacks(holeNumberPacks.filter((_, i) => i !== packModal.idx));
+    if (activePack === holeNumberPacks[packModal.idx]?.name) setActivePack(null);
+    setPackModal(null);
+  };
+
+  // Hole操作
+  const addHole = () => {
+    pushHistory();
+    setHoles([...holes, { name: `穴${holes.length + 1}`, x: 0, y: 0, depth: 200, diameter: defaultDiameter, lockedTo: null }]);
+  };
+  const updateHole = (i, field, value) => {
+    pushHistory();
+    const copy = [...holes];
+    if (field === 'name' || field === 'lockedTo') copy[i][field] = value;
+    else copy[i][field] = parseFloat(value) || 0;
+    setHoles(copy);
+  };
+  const removeHole = (i) => {
+    pushHistory();
+    const newHoles = holes.filter((_, idx) => idx !== i).map(h => {
+      if (h.lockedTo === i) return { ...h, lockedTo: null };
+      if (h.lockedTo !== null && h.lockedTo !== undefined && h.lockedTo > i) return { ...h, lockedTo: h.lockedTo - 1 };
+      return h;
+    });
+    setHoles(newHoles);
+  };
+
+  const addByDistance = () => {
+    pushHistory();
+    if (holes.length === 0) {
+      const name = distForm.name.trim() || `穴${holes.length + 1}`;
+      setHoles([{ name, x: 0, y: 0, depth: distForm.depth, diameter: distForm.diameter, lockedTo: null }]);
+      setDistForm({ ...distForm, name: '' }); return;
+    }
+    if (holes.length === 1) {
+      const A = holes[0];
+      const name = distForm.name.trim() || `穴${holes.length + 1}`;
+      setHoles([...holes, { name, x: A.x + distForm.distA, y: A.y, depth: distForm.depth, diameter: distForm.diameter, lockedTo: null }]);
+      setDistForm({ ...distForm, name: '' }); return;
+    }
+    const A = holes[distForm.refAIdx], B = holes[distForm.refBIdx];
+    if (!A || !B || distForm.refAIdx === distForm.refBIdx) { alert('基準穴Aと基準穴Bは別の穴を選択してください'); return; }
+    const pos = triangulate(A, B, distForm.distA, distForm.distB, distForm.side);
+    if (!pos) { alert('その距離では三角形が成立しません'); return; }
+    const name = distForm.name.trim() || `穴${holes.length + 1}`;
+    setHoles([...holes, { name, x: Math.round(pos.x * 1000) / 1000, y: Math.round(pos.y * 1000) / 1000, depth: distForm.depth, diameter: distForm.diameter, lockedTo: null }]);
+    setDistForm({ ...distForm, name: '' });
+  };
+
+  // 画像
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const loadImage = (dataUrl) => {
+      const img = new Image();
+      img.onload = () => {
+        setTraceImage(img);
+        setTraceImageDataUrl(dataUrl);
+        setTraceScale(null);
+        setMeasureStep(null); setTempPoints([]);
+        resetView(); setInputMode('trace');
+      };
+      img.onerror = () => alert('画像の読み込みに失敗しました');
+      img.src = dataUrl;
+    };
+    if (file.type === 'application/pdf') {
+      try {
+        const ab = await file.arrayBuffer();
+        const pdf = await window.pdfjsLib.getDocument({ data: ab }).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 2.0 });
+        const c = document.createElement('canvas');
+        c.width = viewport.width; c.height = viewport.height;
+        await page.render({ canvasContext: c.getContext('2d'), viewport }).promise;
+        loadImage(c.toDataURL('image/png'));
+      } catch (err) { alert('PDF読み込みエラー: ' + err.message); }
+    } else if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (ev) => loadImage(ev.target.result);
+      reader.onerror = () => alert('ファイル読み込みエラー');
+      reader.readAsDataURL(file);
+    } else { alert('画像またはPDFを選択してください'); }
+    e.target.value = '';
+  };
+  const clearTraceImage = () => {
+    setTraceImage(null); setTraceImageDataUrl(null); setTraceScale(null);
+    setMeasureStep(null); setTempPoints([]);
+  };
+  const startScaling = () => {
+    if (!traceImage) { alert('先に画像をアップロードしてください'); return; }
+    setMeasureStep('scale-p1'); setTempPoints([]);
+  };
+  const startDiameterMeasure = () => {
+    if (!traceScale) { alert('先に縮尺校正を完了してください'); return; }
+    setMeasureStep('measure-p1'); setTempPoints([]);
+  };
+  const startPattern1Mark = () => {
+    if (!traceScale) { alert('先に縮尺校正を完了してください'); return; }
+    setMeasureStep('pattern1-mark'); setTempPoints([]);
+  };
+  const startPattern2Circle = () => {
+    if (!traceScale) { alert('先に縮尺校正を完了してください'); return; }
+    setMeasureStep('pick-edge1'); setTempPoints([]);
+  };
+  const startPattern2Drag = () => {
+    if (!traceScale) { alert('先に縮尺校正を完了してください'); return; }
+    setMeasureStep('drag-circle'); setTempPoints([]);
+  };
+
+  const openCreateTextModal = (x, y) => setTextModal({ mode: 'create', x, y, initial: null });
+  const openEditTextModal = (i) => setTextModal({ mode: 'edit', idx: i, initial: annotations[i] });
+  const handleTextModalSave = (data) => {
+    pushHistory();
+    if (textModal.mode === 'create') setAnnotations([...annotations, { x: textModal.x, y: textModal.y, ...data }]);
+    else { const copy = [...annotations]; copy[textModal.idx] = { ...copy[textModal.idx], ...data }; setAnnotations(copy); }
+    setTextModal(null);
+  };
+  const removeAnnotation = (i) => { pushHistory(); setAnnotations(annotations.filter((_, idx) => idx !== i)); };
+
+  const resetView = () => { setViewZoom(1); setViewPan({ x: 0, y: 0 }); };
+  const applyZoom = (factor, centerSx, centerSy) => {
+    const newZoom = Math.max(0.2, Math.min(20, viewZoom * factor));
+    const scaleChange = newZoom / viewZoom;
+    setViewPan({ x: centerSx - (centerSx - viewPan.x) * scaleChange, y: centerSy - (centerSy - viewPan.y) * scaleChange });
+    setViewZoom(newZoom);
+  };
+
+  // Canvas 描画
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.clientWidth * dpr, H = canvas.clientHeight * dpr;
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, W, H);
+
+    const pad = 40 * dpr;
+    let xmin, xmax, ymin, ymax;
+    if (calc && traceImage && traceScale) {
+      const imgW = traceImage.width * traceScale.mmPerImgPx;
+      const imgH = traceImage.height * traceScale.mmPerImgPx;
+      const imgXmin = -traceScale.p1ImgX * traceScale.mmPerImgPx;
+      const imgYmax = traceScale.p1ImgY * traceScale.mmPerImgPx;
+      xmin = Math.min(calc.bounds.xmin, imgXmin);
+      xmax = Math.max(calc.bounds.xmax, imgXmin + imgW);
+      ymin = Math.min(calc.bounds.ymin, imgYmax - imgH);
+      ymax = Math.max(calc.bounds.ymax, imgYmax);
+    } else if (calc) {
+      ({ xmin, xmax, ymin, ymax } = calc.bounds);
+    } else if (traceImage && traceScale) {
+      const imgW = traceImage.width * traceScale.mmPerImgPx;
+      const imgH = traceImage.height * traceScale.mmPerImgPx;
+      xmin = -traceScale.p1ImgX * traceScale.mmPerImgPx;
+      xmax = xmin + imgW;
+      ymax = traceScale.p1ImgY * traceScale.mmPerImgPx;
+      ymin = ymax - imgH;
+    } else if (traceImage) {
+      xmin = 0; xmax = traceImage.width; ymin = -traceImage.height; ymax = 0;
+    } else { xmin = -50; xmax = 50; ymin = -50; ymax = 50; }
+
+    const rangeX = xmax - xmin, rangeY = ymax - ymin;
+    const baseScale = Math.min((W - pad * 2) / rangeX, (H - pad * 2) / rangeY);
+    const offsetX = (W - rangeX * baseScale) / 2 - xmin * baseScale;
+    const offsetY = H - ((H - rangeY * baseScale) / 2) + ymin * baseScale;
+    const baseToScreen = (x, y) => [x * baseScale + offsetX, -y * baseScale + offsetY];
+    const baseFromScreen = (sx, sy) => [(sx - offsetX) / baseScale, -(sy - offsetY) / baseScale];
+
+    const zoom = viewZoom, panX = viewPan.x * dpr, panY = viewPan.y * dpr;
+    const toScreen = (x, y) => { const [sx, sy] = baseToScreen(x, y); return [sx * zoom + panX, sy * zoom + panY]; };
+    const fromScreen = (sx, sy) => baseFromScreen((sx - panX) / zoom, (sy - panY) / zoom);
+    const scale = baseScale * zoom;
+    transformRef.current = { toScreen, fromScreen, scale, dpr };
+
+    if (traceImage) {
+      ctx.save();
+      ctx.globalAlpha = traceOpacity;
+      if (traceScale) {
+        const imgRealW = traceImage.width * traceScale.mmPerImgPx;
+        const imgRealH = traceImage.height * traceScale.mmPerImgPx;
+        const imgRealX = -traceScale.p1ImgX * traceScale.mmPerImgPx;
+        const imgRealYtop = traceScale.p1ImgY * traceScale.mmPerImgPx;
+        const [sx, sy] = toScreen(imgRealX, imgRealYtop);
+        ctx.drawImage(traceImage, sx, sy, imgRealW * scale, imgRealH * scale);
+      } else {
+        const [sx, sy] = toScreen(0, 0);
+        ctx.drawImage(traceImage, sx, sy, traceImage.width * scale, traceImage.height * scale);
+      }
+      ctx.restore();
+    }
+
+    if (calc) {
+      const { bounds: cb, results } = calc;
+      const mapN = dragTarget !== null ? 80 : 140;
+      const rX = cb.xmax - cb.xmin, rY = cb.ymax - cb.ymin;
+      const dxm = rX / mapN, dym = rY / mapN;
+      const depths = results.map(h => h.depth);
+      const dmin = Math.min(...depths), dmax = Math.max(...depths);
+
+      const intensity = colorIntensity;
+      for (let iy = 0; iy < mapN; iy++) {
+        const py = cb.ymin + (iy + 0.5) * dym;
+        for (let ix = 0; ix < mapN; ix++) {
+          const px = cb.xmin + (ix + 0.5) * dxm;
+          let overlap = 0;
+          let deepestDepth = null;
+          for (const h of holes) {
+            const r = h.diameter / 2;
+            if ((px - h.x) ** 2 + (py - h.y) ** 2 <= r * r) {
+              overlap++;
+              if (deepestDepth === null || h.depth > deepestDepth) deepestDepth = h.depth;
+            }
+          }
+          if (overlap === 0) continue;
+          const t = dmax > dmin ? (deepestDepth - dmin) / (dmax - dmin) : 0.5;
+          const tPow = Math.pow(t, 1 / intensity);
+          let rC, gC, bC;
+          if (tPow < 0.5) {
+            const k = tPow * 2;
+            rC = 255; gC = Math.round(230 - k * 130); bC = Math.round(140 - k * 120);
+          } else {
+            const k = (tPow - 0.5) * 2;
+            rC = Math.round(255 - k * 80); gC = Math.round(100 - k * 90); bC = 20;
+          }
+          const overlapBoost = Math.min(overlap - 1, 2) * 0.15 * intensity;
+          rC = Math.max(0, Math.round(rC * (1 - overlapBoost * 0.5)));
+          gC = Math.max(0, Math.round(gC * (1 - overlapBoost * 0.7)));
+          bC = Math.max(0, Math.round(bC * (1 - overlapBoost * 0.3)));
+          const alpha = Math.min(0.95, 0.55 + overlapBoost);
+          ctx.fillStyle = `rgba(${rC},${gC},${bC},${alpha})`;
+          const [sx1, sy1] = toScreen(px - dxm / 2, py + dym / 2);
+          ctx.fillRect(sx1, sy1, dxm * scale + 1, dym * scale + 1);
+        }
+      }
+
+      ctx.strokeStyle = 'rgba(100,120,140,0.15)'; ctx.lineWidth = 1;
+      for (let gx = Math.ceil(cb.xmin / 10) * 10; gx <= cb.xmax; gx += 10) {
+        const [sx] = toScreen(gx, 0); ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke();
+      }
+      for (let gy = Math.ceil(cb.ymin / 10) * 10; gy <= cb.ymax; gy += 10) {
+        const [, sy] = toScreen(0, gy); ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(W, sy); ctx.stroke();
+      }
+
+      if (distanceLockMode) {
+        results.forEach((h) => {
+          if (h.lockedTo != null && results[h.lockedTo]) {
+            const base = results[h.lockedTo];
+            const [sx1, sy1] = toScreen(h.x, h.y);
+            const [sx2, sy2] = toScreen(base.x, base.y);
+            ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+            ctx.lineWidth = 2 * dpr;
+            ctx.setLineDash([6 * dpr, 4 * dpr]);
+            ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+            ctx.setLineDash([]);
+            const midX = (sx1 + sx2) / 2, midY = (sy1 + sy2) / 2;
+            const dist = Math.hypot(h.x - base.x, h.y - base.y);
+            ctx.fillStyle = '#78350f';
+            ctx.fillRect(midX - 30 * dpr, midY - 9 * dpr, 60 * dpr, 18 * dpr);
+            ctx.fillStyle = '#fbbf24';
+            ctx.font = `bold ${11 * dpr}px sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(`🔒${dist.toFixed(1)}mm`, midX, midY);
+            ctx.textBaseline = 'alphabetic';
+          }
+        });
+      }
+
+      // 各穴の「担当領域の重心」を事前計算
+      // 食われている穴は、本来の円中心が担当領域外にあるため違和感が出るので
+      // 中心点マーカーと引き出し線は「担当領域の重心」を使って描画する
+      const ownedCentroids = results.map((h, i) => {
+        let sumX = 0, sumY = 0, count = 0;
+        for (let iy = 0; iy < mapN; iy++) {
+          const py = cb.ymin + (iy + 0.5) * dym;
+          for (let ix = 0; ix < mapN; ix++) {
+            const px = cb.xmin + (ix + 0.5) * dxm;
+            const r = h.diameter / 2;
+            if ((px - h.x) ** 2 + (py - h.y) ** 2 > r * r) continue;
+            let coveredByDeeper = false;
+            for (const o of results) {
+              if (o.idx === i) continue;
+              if (o.depth <= h.depth) continue;
+              const or = o.diameter / 2;
+              if ((px - o.x) ** 2 + (py - o.y) ** 2 <= or * or) { coveredByDeeper = true; break; }
+            }
+            if (!coveredByDeeper) { sumX += px; sumY += py; count++; }
+          }
+        }
+        if (count === 0) return null;
+        return { x: sumX / count, y: sumY / count };
+      });
+
+      results.forEach((h, i) => {
+        const [sx, sy] = toScreen(h.x, h.y);
+        const sr = (h.diameter / 2) * scale;
+        const isDragging = dragTargetRef.current?.type === 'hole' && dragTargetRef.current?.idx === i;
+        const hasLock = distanceLockMode && h.lockedTo != null;
+        ctx.strokeStyle = isDragging ? '#ffeb3b' : (hasLock ? '#fbbf24' : '#5fffe0');
+        ctx.lineWidth = (isDragging || hasLock ? 2.2 : 1.6) * dpr;
+
+        if (displayMode === 'full') {
+          // 従来通り完全な円
+          ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI * 2); ctx.stroke();
+        } else {
+          // 【担当領域の境界だけ描画】- シンプル版
+          // 各点について「他のどの穴の内側にも入っていない」かを判定し、
+          // 可視の点だけ小さな線分(小弧)として描画する。
+          // セグメント連結や offset 計算を廃止して、バグの余地を無くす。
+          const N = 720; // 解像度を上げる
+          const r = h.diameter / 2;
+          const otherHoles = results.filter(o => o.idx !== i);
+          // 各点の可視判定
+          const visible = new Array(N);
+          for (let k = 0; k < N; k++) {
+            const th = (k / N) * Math.PI * 2;
+            const px = h.x + r * Math.cos(th);
+            const py = h.y + r * Math.sin(th);
+            let inside = false;
+            for (const o of otherHoles) {
+              const or = o.diameter / 2;
+              if ((px - o.x) ** 2 + (py - o.y) ** 2 < or * or - 1e-6) { inside = true; break; }
+            }
+            visible[k] = !inside;
+          }
+          // 全て可視なら完全な円
+          if (visible.every(v => v)) {
+            ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI * 2); ctx.stroke();
+          } else if (visible.every(v => !v)) {
+            // 全て不可視 → 描かない
+          } else {
+            // 連続した可視区間ごとに、独立したパスとして描画する
+            // ※ 重要: 可視判定は実空間 (Y上向き) で計算しているが、
+            //   Canvas は Y下向き。toScreen() が y を反転している都合で
+            //   実空間の角度 θ は画面では -θ に対応する。
+            //   そのため arc() の startAngle / endAngle を負にして、
+            //   anticlockwise=true で描く（実空間でCCWに進む = 画面ではCW）。
+            let segStart = -1;
+            const drawSeg = (startK, endK) => {
+              const th1 = (startK / N) * Math.PI * 2;
+              const th2 = (endK / N) * Math.PI * 2;
+              ctx.beginPath();
+              // 実空間の th1 → th2（CCW）を、画面では -th1 → -th2（CW）として描く
+              ctx.arc(sx, sy, sr, -th1, -th2, true);
+              ctx.stroke();
+            };
+            for (let k = 0; k <= N; k++) {
+              const cur = visible[k % N];
+              if (cur && segStart === -1) {
+                segStart = k;
+              } else if (!cur && segStart !== -1) {
+                drawSeg(segStart, k);
+                segStart = -1;
+              }
+            }
+            if (segStart !== -1) {
+              drawSeg(segStart, N);
+            }
+          }
+        }
+
+        // 中心点
+        ctx.fillStyle = isDragging ? '#ffeb3b' : '#ff5555';
+        ctx.beginPath(); ctx.arc(sx, sy, (isDragging ? 6 : 4) * dpr, 0, Math.PI * 2); ctx.fill();
+        if (distanceLockMode) {
+          const isLockTarget = results.some(other => other.lockedTo === i);
+          if (isLockTarget) {
+            ctx.fillStyle = '#10b981';
+            ctx.font = `bold ${14 * dpr}px sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('⚓', sx, sy - sr - 10 * dpr);
+            ctx.textBaseline = 'alphabetic';
+          }
+        }
+      });
+
+      const labels = layoutLabels(results, toScreen, scale, dpr);
+      results.forEach((h, i) => {
+        const rect = labels[i]; if (!rect) return;
+        const [cx, cy] = toScreen(h.x, h.y);
+        const lcx = rect.x + rect.w / 2, lcy = rect.y + rect.h / 2;
+        const endX = rect.anchorSide === 'right' ? rect.x + rect.w : rect.x;
+        const endY = lcy;
+        ctx.strokeStyle = 'rgba(95, 255, 224, 0.6)'; ctx.lineWidth = 1 * dpr;
+        ctx.setLineDash([3 * dpr, 2 * dpr]);
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(endX, endY); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#5fffe0'; ctx.font = `bold ${13 * dpr}px sans-serif`;
+        ctx.textAlign = rect.anchorSide === 'right' ? 'right' : 'left';
+        const tx = rect.anchorSide === 'right' ? rect.x + rect.w : rect.x;
+        ctx.fillText(`${h.name}  t${h.depth}  φ${h.diameter}`, tx, rect.y + 14 * dpr);
+        ctx.font = `${11 * dpr}px sans-serif`; ctx.fillStyle = '#a0f0e0';
+        ctx.fillText(`${h.area.toFixed(2)} mm²`, tx, rect.y + 28 * dpr);
+      });
+
+      const [ox, oy] = toScreen(0, 0);
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(ox - 8, oy); ctx.lineTo(ox + 8, oy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ox, oy - 8); ctx.lineTo(ox, oy + 8); ctx.stroke();
+
+      if (rotateMode && results.length >= 2) {
+        const ccx = results.reduce((s, h) => s + h.x, 0) / results.length;
+        const ccy = results.reduce((s, h) => s + h.y, 0) / results.length;
+        const [scx, scy] = toScreen(ccx, ccy);
+        ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 2 * dpr;
+        ctx.setLineDash([4 * dpr, 3 * dpr]);
+        ctx.beginPath(); ctx.arc(scx, scy, 14 * dpr, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(scx - 10 * dpr, scy); ctx.lineTo(scx + 10 * dpr, scy); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(scx, scy - 10 * dpr); ctx.lineTo(scx, scy + 10 * dpr); ctx.stroke();
+        ctx.strokeStyle = 'rgba(168, 85, 247, 0.3)'; ctx.lineWidth = 1 * dpr;
+        ctx.setLineDash([2 * dpr, 2 * dpr]);
+        results.forEach(h => {
+          const [hsx, hsy] = toScreen(h.x, h.y);
+          ctx.beginPath(); ctx.moveTo(scx, scy); ctx.lineTo(hsx, hsy); ctx.stroke();
+        });
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#a855f7';
+        ctx.font = `bold ${11 * dpr}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('🔄 重心', scx, scy - 24 * dpr);
+        ctx.textBaseline = 'alphabetic';
+      }
+    }
+
+    annotations.forEach((a, i) => {
+      const [sx, sy] = toScreen(a.x, a.y);
+      const isDragging = dragTargetRef.current?.type === 'annotation' && dragTargetRef.current?.idx === i;
+      const weight = a.bold !== false ? 'bold' : 'normal';
+      ctx.font = `${weight} ${a.fontSize * dpr}px ${a.fontFamily || 'sans-serif'}`;
+      const metrics = ctx.measureText(a.text);
+      const tw = metrics.width + 10 * dpr, th = (a.fontSize + 6) * dpr;
+      const bg = a.bgColor || '#000000', bgOp = a.bgOpacity ?? 0.75;
+      const r = parseInt(bg.slice(1, 3), 16), g = parseInt(bg.slice(3, 5), 16), b = parseInt(bg.slice(5, 7), 16);
+      ctx.fillStyle = isDragging ? 'rgba(255, 235, 59, 0.9)' : `rgba(${r},${g},${b},${bgOp})`;
+      ctx.fillRect(sx - tw / 2, sy - th / 2, tw, th);
+      ctx.strokeStyle = a.color; ctx.lineWidth = 1.5 * dpr;
+      ctx.strokeRect(sx - tw / 2, sy - th / 2, tw, th);
+      ctx.fillStyle = isDragging ? '#000' : a.color;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(a.text, sx, sy);
+      ctx.textBaseline = 'alphabetic';
+    });
+
+    if (measureStep && tempPoints.length > 0) {
+      const isScale = measureStep.startsWith('scale');
+      const isMeasure = measureStep.startsWith('measure');
+      let color;
+      if (isScale) color = '#ffeb3b';
+      else if (isMeasure) color = '#22d3ee';
+      else color = '#a855f7';
+
+      ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2 * dpr;
+      tempPoints.forEach((p, i) => {
+        ctx.beginPath(); ctx.arc(p.sx, p.sy, 6 * dpr, 0, Math.PI * 2); ctx.fill();
+        ctx.font = `bold ${12 * dpr}px sans-serif`;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText(`P${i + 1}`, p.sx + 10 * dpr, p.sy - 8 * dpr);
+      });
+      if (tempPoints.length === 2 && (isScale || isMeasure)) {
+        ctx.beginPath(); ctx.moveTo(tempPoints[0].sx, tempPoints[0].sy); ctx.lineTo(tempPoints[1].sx, tempPoints[1].sy); ctx.stroke();
+      }
+    }
+
+    // ドラッグ中の円プレビュー
+    if (dragCircle) {
+      const [cssx, cssy] = toScreen(dragCircle.cx, dragCircle.cy);
+      const srr = dragCircle.r * scale;
+      // 円
+      ctx.strokeStyle = '#22c55e';
+      ctx.lineWidth = 2.5 * dpr;
+      ctx.setLineDash([6 * dpr, 3 * dpr]);
+      ctx.beginPath();
+      ctx.arc(cssx, cssy, Math.max(srr, 1), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // 中心十字
+      ctx.strokeStyle = '#22c55e';
+      ctx.lineWidth = 2 * dpr;
+      ctx.beginPath();
+      ctx.moveTo(cssx - 8 * dpr, cssy); ctx.lineTo(cssx + 8 * dpr, cssy);
+      ctx.moveTo(cssx, cssy - 8 * dpr); ctx.lineTo(cssx, cssy + 8 * dpr);
+      ctx.stroke();
+      // 直径ラベル
+      if (dragCircle.r > 0.5) {
+        const diameter = dragCircle.r * 2;
+        const label = `φ${diameter.toFixed(1)} mm`;
+        ctx.font = `bold ${14 * dpr}px sans-serif`;
+        const tw = ctx.measureText(label).width + 12 * dpr;
+        const th = 22 * dpr;
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.95)';
+        ctx.fillRect(cssx - tw / 2, cssy - srr - th - 6 * dpr, tw, th);
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(label, cssx, cssy - srr - th / 2 - 6 * dpr);
+        ctx.textBaseline = 'alphabetic';
+      }
+    }
+  }, [calc, dragTarget, annotations, traceImage, traceOpacity, traceScale, inputMode, measureStep, tempPoints, viewZoom, viewPan, distanceLockMode, colorIntensity, holes, rotateMode, displayMode, dragCircle]);
+
+  // ホイール passive:false
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const handleWheelNative = (e) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      applyZoom(factor, e.clientX - rect.left, e.clientY - rect.top);
+    };
+    canvas.addEventListener('wheel', handleWheelNative, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheelNative);
+  }, [viewZoom, viewPan]);
+
+  // 入力
+  const getLocalPos = (clientX, clientY) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const sx = (clientX - rect.left) * dpr, sy = (clientY - rect.top) * dpr;
+    if (!transformRef.current) return { sx, sy, x: 0, y: 0, imgPx: null };
+    const [x, y] = transformRef.current.fromScreen(sx, sy);
+    let imgPx = null;
+    if (traceImage) {
+      if (traceScale) imgPx = { x: x / traceScale.mmPerImgPx + traceScale.p1ImgX, y: -y / traceScale.mmPerImgPx + traceScale.p1ImgY };
+      else imgPx = { x, y: -y };
+    }
+    return { sx, sy, x, y, imgPx };
+  };
+
+  const handlePointerDown = (e) => {
+    const p = getLocalPos(e.clientX, e.clientY);
+    if (!p) return;
+    const { x, y, sx, sy, imgPx } = p;
+
+    if (panMode) {
+      isPanningRef.current = true;
+      panStartRef.current = { sx: e.clientX, sy: e.clientY, panX: viewPan.x, panY: viewPan.y };
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault(); return;
+    }
+    if (rotateMode && holes.length >= 2) {
+      const cx = holes.reduce((s, h) => s + h.x, 0) / holes.length;
+      const cy = holes.reduce((s, h) => s + h.y, 0) / holes.length;
+      const initialAngle = Math.atan2(y - cy, x - cx);
+      isRotatingRef.current = true;
+      rotateStartRef.current = { centroid: { x: cx, y: cy }, initialAngle, origHoles: holes.map(h => ({ ...h })) };
+      dragStartSnapshotRef.current = captureSnapshot();
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault(); return;
+    }
+
+    if (measureStep === 'scale-p1') {
+      if (!traceImage || !imgPx) { alert('画像の上をクリックしてください'); return; }
+      setTempPoints([{ sx, sy, imgX: imgPx.x, imgY: imgPx.y }]);
+      setMeasureStep('scale-p2'); return;
+    }
+    if (measureStep === 'scale-p2') {
+      if (!traceImage || !imgPx) { alert('画像の上をクリックしてください'); return; }
+      const newPts = [...tempPoints, { sx, sy, imgX: imgPx.x, imgY: imgPx.y }];
+      setTempPoints(newPts);
+      setDistanceModal({ type: 'scale', title: '🎯 縮尺校正', message: 'クリックした2点の実距離をmmで入力', points: newPts });
+      return;
+    }
+    if (measureStep === 'measure-p1') {
+      setTempPoints([{ sx, sy, x, y }]); setMeasureStep('measure-p2'); return;
+    }
+    if (measureStep === 'measure-p2') {
+      const newPts = [...tempPoints, { sx, sy, x, y }];
+      setTempPoints(newPts);
+      const dist = Math.hypot(newPts[1].x - newPts[0].x, newPts[1].y - newPts[0].y);
+      setDistanceModal({ type: 'measure', title: '📏 穴径測定', message: `測定距離: ${dist.toFixed(3)} mm\n穴径φ欄に設定する値を入力`, points: newPts, defaultValue: Math.round(dist * 10) / 10 });
+      return;
+    }
+    if (measureStep === 'pattern1-mark') {
+      if (!traceScale) { alert('縮尺校正してください'); return; }
+      pushHistory();
+      const newName = clickName.trim() || `穴${holes.length + 1}`;
+      setHoles([...holes, { name: newName, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, depth: clickDepth, diameter: clickDiameter, lockedTo: null }]);
+      setTempPoints([]); return;
+    }
+    if (measureStep === 'pick-edge1') {
+      setTempPoints([{ sx, sy, x, y }]); setMeasureStep('pick-edge2'); return;
+    }
+    if (measureStep === 'pick-edge2') {
+      setTempPoints([...tempPoints, { sx, sy, x, y }]); setMeasureStep('pick-edge3'); return;
+    }
+    if (measureStep === 'pick-edge3') {
+      const newPts = [...tempPoints, { sx, sy, x, y }];
+      const circle = circleFrom3Points(newPts[0], newPts[1], newPts[2]);
+      if (!circle) { alert('3点が直線上にあります'); setTempPoints([]); setMeasureStep('pick-edge1'); return; }
+      pushHistory();
+      const newName = clickName.trim() || `穴${holes.length + 1}`;
+      const diameter = Math.round(circle.r * 2 * 10) / 10;
+      setHoles([...holes, { name: newName, x: Math.round(circle.cx * 10) / 10, y: Math.round(circle.cy * 10) / 10, depth: clickDepth, diameter, lockedTo: null }]);
+      setClickDiameter(diameter);
+      setTempPoints([]); setMeasureStep('pick-edge1'); return;
+    }
+    // ドラッグで円を配置
+    if (measureStep === 'drag-circle') {
+      dragCircleRef.current = { cx: x, cy: y, r: 0, clickSx: sx, clickSy: sy };
+      setDragCircle({ cx: x, cy: y, r: 0 });
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+      return;
+    }
+
+    if (transformRef.current) {
+      const dpr = transformRef.current.dpr;
+      const ctx = canvasRef.current.getContext('2d');
+      for (let i = annotations.length - 1; i >= 0; i--) {
+        const a = annotations[i];
+        const [asx, asy] = transformRef.current.toScreen(a.x, a.y);
+        ctx.font = `${a.bold !== false ? 'bold' : 'normal'} ${a.fontSize * dpr}px ${a.fontFamily || 'sans-serif'}`;
+        const tw = ctx.measureText(a.text).width + 10 * dpr;
+        const th = (a.fontSize + 6) * dpr;
+        if (Math.abs(sx - asx) < tw / 2 && Math.abs(sy - asy) < th / 2) {
+          dragTargetRef.current = { type: 'annotation', idx: i };
+          setDragTarget({ type: 'annotation', idx: i });
+          dragStartSnapshotRef.current = captureSnapshot();
+          dragOriginRef.current = { x, y, clickSx: sx, clickSy: sy };
+          try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+          e.preventDefault();
+          return;
+        }
+      }
+    }
+
+    let closestIdx = -1, closestDist = Infinity;
+    for (let i = 0; i < holes.length; i++) {
+      const h = holes[i];
+      const r = h.diameter / 2;
+      const d = Math.sqrt((h.x - x) ** 2 + (h.y - y) ** 2);
+      if (d < r && d < closestDist) { closestDist = d; closestIdx = i; }
+    }
+    if (closestIdx >= 0) {
+      dragTargetRef.current = { type: 'hole', idx: closestIdx };
+      setDragTarget({ type: 'hole', idx: closestIdx });
+      dragStartSnapshotRef.current = captureSnapshot();
+      const h = holes[closestIdx];
+      let lockBase = null, lockDist = null;
+      if (distanceLockMode && h.lockedTo != null && holes[h.lockedTo]) {
+        const base = holes[h.lockedTo];
+        lockBase = { x: base.x, y: base.y };
+        lockDist = Math.hypot(h.x - base.x, h.y - base.y);
+      }
+      dragOriginRef.current = { x, y, origHole: { ...h }, lockBase, lockDist, clickSx: sx, clickSy: sy };
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+      return;
+    }
+
+    if (inputMode === 'click') {
+      pushHistory();
+      const newName = clickName.trim() || `穴${holes.length + 1}`;
+      setHoles([...holes, { name: newName, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, depth: clickDepth, diameter: clickDiameter, lockedTo: null }]);
+    }
+  };
+
+  const handlePointerMove = (e) => {
+    if (isPanningRef.current && panStartRef.current) {
+      const s = panStartRef.current;
+      setViewPan({ x: s.panX + (e.clientX - s.sx), y: s.panY + (e.clientY - s.sy) });
+      e.preventDefault(); return;
+    }
+    if (isRotatingRef.current && rotateStartRef.current) {
+      const p = getLocalPos(e.clientX, e.clientY);
+      if (!p) return;
+      const { centroid, initialAngle, origHoles } = rotateStartRef.current;
+      const currentAngle = Math.atan2(p.y - centroid.y, p.x - centroid.x);
+      const dAngle = currentAngle - initialAngle;
+      const cos = Math.cos(dAngle), sin = Math.sin(dAngle);
+      const rotated = origHoles.map(h => {
+        const dx = h.x - centroid.x;
+        const dy = h.y - centroid.y;
+        return { ...h, x: Math.round((centroid.x + dx * cos - dy * sin) * 100) / 100, y: Math.round((centroid.y + dx * sin + dy * cos) * 100) / 100 };
+      });
+      setHoles(rotated); e.preventDefault(); return;
+    }
+    // ドラッグ円
+    if (dragCircleRef.current) {
+      const p = getLocalPos(e.clientX, e.clientY);
+      if (!p) return;
+      const dc = dragCircleRef.current;
+      const r = Math.hypot(p.x - dc.cx, p.y - dc.cy);
+      dragCircleRef.current = { ...dc, r };
+      setDragCircle({ cx: dc.cx, cy: dc.cy, r });
+      e.preventDefault();
+      return;
+    }
+    if (dragTargetRef.current === null) return;
+    const p = getLocalPos(e.clientX, e.clientY);
+    if (!p) return;
+    const t = dragTargetRef.current;
+    if (t.type === 'hole') {
+      const origin = dragOriginRef.current;
+      if (!origin) return;
+      let newX, newY;
+      if (distanceLockMode && origin.lockBase && origin.lockDist) {
+        const base = origin.lockBase;
+        const dx = p.x - base.x, dy = p.y - base.y;
+        const d = Math.hypot(dx, dy);
+        if (d < 0.01) return;
+        newX = base.x + (dx / d) * origin.lockDist;
+        newY = base.y + (dy / d) * origin.lockDist;
+      } else { newX = p.x; newY = p.y; }
+      setHoles(prev => {
+        const copy = [...prev];
+        if (!copy[t.idx]) return prev;
+        copy[t.idx] = { ...copy[t.idx], x: Math.round(newX * 10) / 10, y: Math.round(newY * 10) / 10 };
+        return copy;
+      });
+    } else if (t.type === 'annotation') {
+      setAnnotations(prev => {
+        const copy = [...prev];
+        if (!copy[t.idx]) return prev;
+        copy[t.idx] = { ...copy[t.idx], x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 };
+        return copy;
+      });
+    }
+    e.preventDefault();
+  };
+
+  const handlePointerUp = (e) => {
+    if (isPanningRef.current) {
+      isPanningRef.current = false; panStartRef.current = null;
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+      return;
+    }
+    if (isRotatingRef.current) {
+      isRotatingRef.current = false; rotateStartRef.current = null;
+      if (dragStartSnapshotRef.current) {
+        historyRef.current.push(dragStartSnapshotRef.current);
+        if (historyRef.current.length > 50) historyRef.current.shift();
+        setCanUndo(true);
+        dragStartSnapshotRef.current = null;
+      }
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+      return;
+    }
+    // ドラッグ円確定
+    if (dragCircleRef.current) {
+      const dc = dragCircleRef.current;
+      dragCircleRef.current = null;
+      setDragCircle(null);
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+      if (dc.r >= 1) {
+        // 半径1mm以上なら穴として追加
+        pushHistory();
+        const newName = clickName.trim() || `穴${holes.length + 1}`;
+        const diameter = Math.round(dc.r * 2 * 10) / 10;
+        setHoles([...holes, {
+          name: newName,
+          x: Math.round(dc.cx * 10) / 10,
+          y: Math.round(dc.cy * 10) / 10,
+          depth: clickDepth,
+          diameter,
+          lockedTo: null,
+        }]);
+        setClickDiameter(diameter);
+      }
+      return;
+    }
+    if (dragTargetRef.current !== null) {
+      const origin = dragOriginRef.current;
+      if (dragTargetRef.current.type === 'annotation' && origin) {
+        const p = getLocalPos(e.clientX, e.clientY);
+        if (p) {
+          const moved = Math.hypot(p.sx - origin.clickSx, p.sy - origin.clickSy);
+          if (moved < 5) openEditTextModal(dragTargetRef.current.idx);
+        }
+      }
+      if (dragStartSnapshotRef.current) {
+        historyRef.current.push(dragStartSnapshotRef.current);
+        if (historyRef.current.length > 50) historyRef.current.shift();
+        setCanUndo(true);
+        dragStartSnapshotRef.current = null;
+      }
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+    }
+    dragTargetRef.current = null;
+    setDragTarget(null);
+    dragOriginRef.current = null;
+  };
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      const t1 = e.touches[0], t2 = e.touches[1];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const rect = canvasRef.current.getBoundingClientRect();
+      pinchRef.current = { dist, zoom: viewZoom, centerSx: (t1.clientX + t2.clientX) / 2 - rect.left, centerSy: (t1.clientY + t2.clientY) / 2 - rect.top };
+      dragTargetRef.current = null; setDragTarget(null); isPanningRef.current = false;
+    }
+  };
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 2 && pinchRef.current) {
+      e.preventDefault();
+      const t1 = e.touches[0], t2 = e.touches[1];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const ratio = dist / pinchRef.current.dist;
+      const newZoom = Math.max(0.2, Math.min(20, pinchRef.current.zoom * ratio));
+      const cx = pinchRef.current.centerSx, cy = pinchRef.current.centerSy;
+      const scaleChange = newZoom / viewZoom;
+      setViewPan({ x: cx - (cx - viewPan.x) * scaleChange, y: cy - (cy - viewPan.y) * scaleChange });
+      setViewZoom(newZoom);
+    }
+  };
+  const handleTouchEnd = (e) => { if (e.touches.length < 2) pinchRef.current = null; };
+
+  const handleDistanceModalSave = (value) => {
+    if (!distanceModal) return;
+    if (distanceModal.type === 'scale') {
+      const pts = distanceModal.points;
+      const imgDist = Math.hypot(pts[1].imgX - pts[0].imgX, pts[1].imgY - pts[0].imgY);
+      if (imgDist < 1) { alert('2点が近すぎます'); setDistanceModal(null); setMeasureStep(null); setTempPoints([]); return; }
+      setTraceScale({ mmPerImgPx: value / imgDist, p1ImgX: pts[0].imgX, p1ImgY: pts[0].imgY });
+      setMeasureStep(null); setTempPoints([]); setDistanceModal(null); resetView();
+    } else if (distanceModal.type === 'measure') {
+      setClickDiameter(Math.round(value * 10) / 10);
+      setMeasureStep(null); setTempPoints([]); setDistanceModal(null);
+    }
+  };
+  const handleDistanceModalCancel = () => { setMeasureStep(null); setTempPoints([]); setDistanceModal(null); };
+
+  const renderReportToCanvas = (exportCanvas) => {
+    const canvas = canvasRef.current;
+    const ctx = exportCanvas.getContext('2d');
+    exportCanvas.width = 1600; exportCanvas.height = 1100;
+    ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 1600, 1100);
+    const dias = [...new Set(holes.map(h => h.diameter))].sort();
+    const diaLabel = dias.length === 1 ? `φ${dias[0]}` : `φ${dias.join('/')}`;
+    ctx.fillStyle = '#1a3a5c'; ctx.font = 'bold 32px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${diaLabel} 連コア加工  体積計算資料  (${holes.length}穴)`, 800, 50);
+    ctx.drawImage(canvas, 40, 90, 900, 600);
+    ctx.textAlign = 'left'; ctx.fillStyle = '#1a3a5c';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText('体積計算サマリー', 970, 130);
+    const headers = ['穴No.', 'φ', '深さ(mm)', '面積(mm²)', '体積(mm³)', '体積(cm³)'];
+    const colW = [70, 55, 85, 115, 130, 110];
+    let ty = 170, tx0 = 970;
+    const totalW = colW.reduce((a, b) => a + b, 0);
+    ctx.fillStyle = '#2d5a8b'; ctx.fillRect(tx0, ty, totalW, 32);
+    ctx.fillStyle = 'white'; ctx.font = 'bold 13px sans-serif';
+    let cx = tx0;
+    headers.forEach((h, i) => { ctx.textAlign = 'center'; ctx.fillText(h, cx + colW[i] / 2, ty + 21); cx += colW[i]; });
+    ty += 32;
+    const sorted = [...calc.results].sort((a, b) => b.depth - a.depth);
+    ctx.font = '13px sans-serif';
+    sorted.forEach((r, rowIdx) => {
+      ctx.fillStyle = rowIdx % 2 ? '#f3f4f6' : 'white';
+      ctx.fillRect(tx0, ty, totalW, 28);
+      ctx.fillStyle = '#1f2937';
+      const vals = [r.name, `φ${r.diameter}`, r.depth.toString(), r.area.toFixed(3), r.volume.toFixed(2), (r.volume / 1000).toFixed(2)];
+      cx = tx0;
+      vals.forEach((v, i) => { ctx.textAlign = 'center'; ctx.fillText(v, cx + colW[i] / 2, ty + 19); cx += colW[i]; });
+      ty += 28;
+    });
+    ctx.fillStyle = '#1a3a5c'; ctx.fillRect(tx0, ty, totalW, 36);
+    ctx.fillStyle = 'white'; ctx.font = 'bold 14px sans-serif';
+    const totals = ['合計', '—', '—', calc.totalArea.toFixed(3), calc.totalVolume.toFixed(2), (calc.totalVolume / 1000).toFixed(2)];
+    cx = tx0;
+    totals.forEach((v, i) => { ctx.textAlign = 'center'; ctx.fillText(v, cx + colW[i] / 2, ty + 23); cx += colW[i]; });
+    ty += 60;
+    ctx.fillStyle = '#eff6ff'; ctx.fillRect(970, ty, 570, 80);
+    ctx.fillStyle = '#1a3a5c'; ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('合計体積', 1255, ty + 25);
+    ctx.font = 'bold 26px sans-serif';
+    ctx.fillText(`${calc.totalVolume.toFixed(0)} mm³  (${(calc.totalVolume / 1000).toFixed(2)} cm³)`, 1255, ty + 60);
+    ctx.fillStyle = '#555'; ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`計算条件: 穴径 ${diaLabel}  /  穴数 ${holes.length}`, 40, 1070);
+    ctx.fillText(`生成日時: ${new Date().toLocaleString('ja-JP')}`, 40, 1090);
+  };
+
+  const exportPNG = () => {
+    const ec = document.createElement('canvas'); renderReportToCanvas(ec);
+    ec.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `連コア体積計算_${holes.length}穴.png`; a.click();
+      URL.revokeObjectURL(url);
+    });
+  };
+  const exportPDF = () => {
+    const ec = document.createElement('canvas'); renderReportToCanvas(ec);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    pdf.addImage(ec.toDataURL('image/png'), 'PNG', 0, 0, 297, 210);
+    pdf.save(`連コア体積計算_${holes.length}穴.pdf`);
+  };
+  const exportExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const dias = [...new Set(holes.map(h => h.diameter))].sort();
+    const data = [
+      ['連コア加工 体積計算結果'], [],
+      ['生成日時', new Date().toLocaleString('ja-JP')],
+      ['使用穴径', dias.map(d => `φ${d}`).join(', ')],
+      ['穴数', holes.length], [],
+      ['穴No.', '穴径φ (mm)', 'X座標 (mm)', 'Y座標 (mm)', '深さ (mm)', '担当面積 (mm²)', '体積 (mm³)', '体積 (cm³)'],
+      ...calc.results.map(r => [r.name, r.diameter, r.x, r.y, r.depth, +r.area.toFixed(3), +r.volume.toFixed(2), +(r.volume / 1000).toFixed(2)]),
+      [],
+      ['合計', '', '', '', '', +calc.totalArea.toFixed(3), +calc.totalVolume.toFixed(2), +(calc.totalVolume / 1000).toFixed(2)],
+      [], ['体積 (L)', '', '', '', '', '', '', +(calc.totalVolume / 1e6).toFixed(4)],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [{ wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws, '計算結果');
+    XLSX.writeFile(wb, `連コア体積計算_${holes.length}穴.xlsx`);
+  };
+
+  const loadSample = (which) => {
+    pushHistory();
+    if (which === 'sample1') setHoles([
+      { name: '3-3', x: 0, y: 0, depth: 209, diameter: 65, lockedTo: null },
+      { name: '3-4', x: 15, y: 0, depth: 238, diameter: 65, lockedTo: null },
+      { name: '3-5', x: 15.2, y: 12.99, depth: 242, diameter: 65, lockedTo: null },
+    ]);
+    else if (which === 'sample2') setHoles([
+      { name: 'A', x: 0, y: 0, depth: 150, diameter: 65, lockedTo: null },
+      { name: 'B', x: 40, y: 0, depth: 200, diameter: 50, lockedTo: null },
+      { name: 'C', x: 20, y: 30, depth: 250, diameter: 40, lockedTo: null },
+    ]);
+    else if (which === 'clear') { setHoles([]); setAnnotations([]); }
+  };
+
+  const canvasCursorClass =
+    panMode ? 'panning' :
+    rotateMode ? 'panning' :
+    measureStep?.startsWith('scale') ? 'scaling' :
+    measureStep?.startsWith('measure') ? 'measuring' :
+    measureStep?.startsWith('pick') || measureStep === 'pattern1-mark' || measureStep === 'drag-circle' ? 'crosshair' :
+    inputMode === 'click' ? 'crosshair' : '';
+
+  // ドロップダウン入力
+  const HoleNameInput = ({ value, onChange }) => (
+    <div style={{ display: 'flex', gap: 2 }}>
+      <input type="text" value={value} onChange={e => onChange(e.target.value)} style={{ flex: 1 }} />
+      <select value="" onChange={e => { if (e.target.value) onChange(e.target.value); }} style={{ width: 28, fontSize: 11 }}>
+        <option value="">▼</option>
+        {activePresets.map(p => <option key={p} value={p}>{p}</option>)}
+      </select>
+    </div>
+  );
+  const DiameterInput = ({ value, onChange }) => (
+    <div style={{ display: 'flex', gap: 2 }}>
+      <input type="number" step="0.1" value={value} onChange={e => onChange(parseFloat(e.target.value) || 0)} style={{ flex: 1 }} />
+      <select value="" onChange={e => { if (e.target.value) onChange(parseFloat(e.target.value)); }} style={{ width: 28, fontSize: 11 }}>
+        <option value="">▼</option>
+        {diameterPresets.map(p => <option key={p} value={p}>φ{p}</option>)}
+      </select>
+    </div>
+  );
+
+  const panels = {
+    common: {
+      title: '① 共通設定',
+      content: (
+        <div>
+          <div className="row">
+            <label>新規穴のデフォルト径 φ (mm)</label>
+            <input type="number" step="0.1" value={defaultDiameter} onChange={e => setDefaultDiameter(parseFloat(e.target.value) || 0)} />
+          </div>
+          <div className="actions" style={{ marginTop: 8 }}>
+            <button className="btn-warning btn-sm" onClick={undo} disabled={!canUndo}>↶ 一つ戻す (Undo)</button>
+          </div>
+
+          {/* 💾 プロジェクト保存 */}
+          <div className="save-section">
+            <h4>💾 プロジェクト (保存済み{Object.keys(projects).length}件)</h4>
+            <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 6 }}>
+              ✨ 自動保存: 変更は常時ブラウザに保存されます<br />
+              📦 手動保存: 名前を付けて複数のプロジェクトを保存できます
+            </div>
+            <button className="btn-primary btn-sm" onClick={() => setProjectModalOpen(true)} style={{ width: '100%' }}>
+              💾 プロジェクトを保存 / 読み込み
+            </button>
+          </div>
+
+          {/* 📦 パック */}
+          <details className="collapsible" open>
+            <summary>📦 穴No.パック ({holeNumberPacks.length}件)</summary>
+            <div className="pack-section">
+              <div style={{ fontSize: 11, color: '#9d174d', marginBottom: 8 }}>
+                関連する穴Noをグループ化。選択中のパックに応じてドロップダウンの中身が切り替わります
+              </div>
+              <div className="row">
+                <label style={{ minWidth: 70 }}>表示中</label>
+                <select value={activePack ?? ''} onChange={e => setActivePack(e.target.value || null)}>
+                  <option value="">全て ({holeNumberPresets.length}個)</option>
+                  {holeNumberPacks.map(p => <option key={p.name} value={p.name}>{p.name} ({p.items.length}個)</option>)}
+                </select>
+              </div>
+              <div style={{ marginBottom: 6 }}>
+                {holeNumberPacks.map((p, i) => (
+                  <span key={p.name} className="pack-chip">
+                    {p.name} ({p.items.length})
+                    <button onClick={() => setPackModal({ mode: 'edit', idx: i, initial: p })} style={{ color: '#2d5a8b', fontSize: 10 }}>✎</button>
+                  </span>
+                ))}
+              </div>
+              <button className="btn-success btn-sm" onClick={() => setPackModal({ mode: 'create', initial: null })} style={{ width: '100%' }}>
+                ➕ 新しいパックを作成
+              </button>
+            </div>
+          </details>
+
+          {/* 📋 個別プリセット */}
+          <details className="collapsible">
+            <summary>📋 穴No. / 穴径 個別プリセット</summary>
+            <div className="preset-section">
+              <h4>穴No. プリセット</h4>
+              <div style={{ marginBottom: 6 }}>
+                {holeNumberPresets.map(p => (
+                  <span key={p} className="pack-chip">
+                    {p}
+                    <button onClick={() => removeHoleNumberPreset(p)}>×</button>
+                  </span>
+                ))}
+              </div>
+              <div className="preset-row">
+                <input type="text" placeholder="例: 3-6" value={newHolePreset} onChange={e => setNewHolePreset(e.target.value)}
+                       onKeyDown={e => { if (e.key === 'Enter') addHoleNumberPreset(); }} />
+                <button className="btn-success btn-sm" onClick={addHoleNumberPreset}>追加</button>
+              </div>
+            </div>
+            <div className="preset-section">
+              <h4>穴径 プリセット (mm)</h4>
+              <div style={{ marginBottom: 6 }}>
+                {diameterPresets.map(p => (
+                  <span key={p} className="pack-chip">
+                    φ{p}
+                    <button onClick={() => removeDiameterPreset(p)}>×</button>
+                  </span>
+                ))}
+              </div>
+              <div className="preset-row">
+                <input type="number" step="0.1" placeholder="例: 75" value={newDiaPreset} onChange={e => setNewDiaPreset(e.target.value)}
+                       onKeyDown={e => { if (e.key === 'Enter') addDiameterPreset(); }} />
+                <button className="btn-success btn-sm" onClick={addDiameterPreset}>追加</button>
+              </div>
+            </div>
+          </details>
+
+          <div className="intensity-control" style={{ marginTop: 10 }}>
+            <span>🎨 深さマップ色強度</span>
+            <input type="range" min="0.5" max="3" step="0.1" value={colorIntensity} onChange={e => setColorIntensity(parseFloat(e.target.value))} style={{ flex: 1 }} />
+            <span style={{ minWidth: 30, textAlign: 'right' }}>{colorIntensity.toFixed(1)}x</span>
+          </div>
+        </div>
+      ),
+    },
+    list: {
+      title: `② 穴リスト (${holes.length}穴)${activePack ? ` / 📦${activePack}` : ''}`,
+      content: (
+        <div>
+          <table className="holes">
+            <thead><tr>
+              <th style={{width: '20%'}}>No.</th>
+              <th style={{width: '16%'}}>φ</th>
+              <th style={{width: '11%'}}>X</th>
+              <th style={{width: '11%'}}>Y</th>
+              <th style={{width: '12%'}}>深さ</th>
+              <th style={{width: '20%'}}>🔒基準</th>
+              <th style={{width: '10%'}}></th>
+            </tr></thead>
+            <tbody>
+              {holes.map((h, i) => (
+                <tr key={i}>
+                  <td><HoleNameInput value={h.name} onChange={v => updateHole(i, 'name', v)} /></td>
+                  <td><DiameterInput value={h.diameter} onChange={v => updateHole(i, 'diameter', v)} /></td>
+                  <td><input type="number" step="0.1" value={h.x} onChange={e => updateHole(i, 'x', e.target.value)} /></td>
+                  <td><input type="number" step="0.1" value={h.y} onChange={e => updateHole(i, 'y', e.target.value)} /></td>
+                  <td><input type="number" step="1" value={h.depth} onChange={e => updateHole(i, 'depth', e.target.value)} /></td>
+                  <td>
+                    <select value={h.lockedTo ?? ''} onChange={e => updateHole(i, 'lockedTo', e.target.value === '' ? null : parseInt(e.target.value))}>
+                      <option value="">なし</option>
+                      {holes.map((h2, j) => j !== i && <option key={j} value={j}>{h2.name}</option>)}
+                    </select>
+                  </td>
+                  <td><button className="btn-danger btn-sm" onClick={() => removeHole(i)}>×</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="actions">
+            <button className="btn-secondary btn-sm" onClick={addHole}>+ 穴追加</button>
+            <button className="btn-secondary btn-sm" onClick={() => loadSample('sample1')}>φ65 3穴</button>
+            <button className="btn-secondary btn-sm" onClick={() => loadSample('sample2')}>混在サンプル</button>
+            <button className="btn-secondary btn-sm" onClick={() => loadSample('clear')}>全クリア</button>
+          </div>
+          {annotations.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <h3 style={{ fontSize: 13, color: '#5b21b6', margin: '0 0 8px' }}>📝 テキスト注釈 ({annotations.length}個)</h3>
+              <table className="holes">
+                <thead><tr><th>テキスト</th><th style={{width:'13%'}}>X</th><th style={{width:'13%'}}>Y</th><th style={{width:'20%'}}></th></tr></thead>
+                <tbody>
+                  {annotations.map((a, i) => (
+                    <tr key={i}>
+                      <td><span style={{ fontFamily: a.fontFamily, color: a.color, background: a.bgColor, padding: '2px 6px', borderRadius: 3, fontSize: 11, border: `1px solid ${a.color}` }}>{a.text}</span></td>
+                      <td><input type="number" step="0.1" value={a.x} onChange={e => { pushHistory(); const c=[...annotations]; c[i]={...c[i],x:parseFloat(e.target.value)||0}; setAnnotations(c); }} /></td>
+                      <td><input type="number" step="0.1" value={a.y} onChange={e => { pushHistory(); const c=[...annotations]; c[i]={...c[i],y:parseFloat(e.target.value)||0}; setAnnotations(c); }} /></td>
+                      <td>
+                        <button className="btn-secondary btn-sm" onClick={() => openEditTextModal(i)}>編集</button>
+                        <button className="btn-danger btn-sm" onClick={() => removeAnnotation(i)} style={{marginLeft:4}}>×</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    mode: {
+      title: '③ 入力モード',
+      content: (
+        <div>
+          <div className="mode-toggle">
+            <button className={inputMode === 'direct' ? 'active' : ''} onClick={() => setInputMode('direct')}>📝 直接</button>
+            <button className={inputMode === 'click' ? 'active' : ''} onClick={() => setInputMode('click')}>🖱️ クリック</button>
+            <button className={inputMode === 'distance' ? 'active' : ''} onClick={() => setInputMode('distance')}>📏 距離</button>
+            <button className={inputMode === 'trace' ? 'active' : ''} onClick={() => setInputMode('trace')}>📷 画像/PDF</button>
+          </div>
+
+          {inputMode === 'click' && (
+            <div style={{ marginTop: 10 }}>
+              <div className="dist-row-3">
+                <div><label>穴No.</label><HoleNameInput value={clickName} onChange={setClickName} /></div>
+                <div><label>深さ (mm)</label><input type="number" step="1" value={clickDepth} onChange={e => setClickDepth(parseFloat(e.target.value) || 0)} /></div>
+                <div><label>穴径 φ (mm)</label><DiameterInput value={clickDiameter} onChange={setClickDiameter} /></div>
+              </div>
+              <div className="hint">💡 右の黒画面をクリックで穴を追加</div>
+            </div>
+          )}
+
+          {inputMode === 'distance' && (
+            <div style={{ marginTop: 10 }}>
+              <div className="info-box">
+                {holes.length === 0 && '🔹 1個目: 原点(0,0)に配置'}
+                {holes.length === 1 && '🔹 2個目: 1個目からの距離でX軸上に配置'}
+                {holes.length >= 2 && '🔹 3個目以降: 2穴からの距離で三角測量'}
+              </div>
+              <div className="dist-row-3">
+                <div><label>穴No.</label><HoleNameInput value={distForm.name} onChange={v => setDistForm({...distForm, name: v})} /></div>
+                <div><label>深さ (mm)</label><input type="number" step="1" value={distForm.depth} onChange={e => setDistForm({...distForm, depth: parseFloat(e.target.value) || 0})} /></div>
+                <div><label>穴径 φ (mm)</label><DiameterInput value={distForm.diameter} onChange={v => setDistForm({...distForm, diameter: v})} /></div>
+              </div>
+              {holes.length >= 1 && (
+                <div className="dist-row">
+                  <div><label>基準穴A</label><select value={distForm.refAIdx} onChange={e => setDistForm({...distForm, refAIdx: parseInt(e.target.value)})} disabled={holes.length < 2}>
+                    {holes.map((h, i) => <option key={i} value={i}>{h.name}</option>)}
+                  </select></div>
+                  <div><label>距離A (mm)</label><input type="number" step="0.1" value={distForm.distA} onChange={e => setDistForm({...distForm, distA: parseFloat(e.target.value) || 0})} /></div>
+                </div>
+              )}
+              {holes.length >= 2 && (
+                <div className="dist-row">
+                  <div><label>基準穴B</label><select value={distForm.refBIdx} onChange={e => setDistForm({...distForm, refBIdx: parseInt(e.target.value)})}>
+                    {holes.map((h, i) => <option key={i} value={i}>{h.name}</option>)}
+                  </select></div>
+                  <div><label>距離B (mm)</label><input type="number" step="0.1" value={distForm.distB} onChange={e => setDistForm({...distForm, distB: parseFloat(e.target.value) || 0})} /></div>
+                </div>
+              )}
+              {holes.length >= 2 && (
+                <div className="row">
+                  <label>配置側</label>
+                  <div className="mode-toggle" style={{ flex: 1 }}>
+                    <button className={distForm.side === 'up' ? 'active' : ''} onClick={() => setDistForm({...distForm, side: 'up'})}>上側</button>
+                    <button className={distForm.side === 'down' ? 'active' : ''} onClick={() => setDistForm({...distForm, side: 'down'})}>下側</button>
+                  </div>
+                </div>
+              )}
+              <button className="btn-success" style={{ width: '100%', marginTop: 4 }} onClick={addByDistance}>➕ 追加</button>
+            </div>
+          )}
+
+          {inputMode === 'trace' && (
+            <div style={{ marginTop: 10 }}>
+              <div className="row">
+                <label>画像/PDF</label>
+                <input type="file" accept="image/*,application/pdf" onChange={handleImageUpload} />
+              </div>
+              {traceImage && (
+                <>
+                  <div style={{ fontSize: 11, color: '#059669', marginBottom: 6 }}>
+                    ✅ 画像読込済 ({traceImage.width}×{traceImage.height}px)
+                  </div>
+                  <div className="row">
+                    <label>透明度 ({Math.round(traceOpacity * 100)}%)</label>
+                    <input type="range" min="0.1" max="1" step="0.05" value={traceOpacity} onChange={e => setTraceOpacity(parseFloat(e.target.value))} style={{ flex: 1 }} />
+                  </div>
+
+                  <div className="pattern-panel">
+                    <h3>🎯 取込方法を選択</h3>
+                    <div className="mode-toggle">
+                      <button className={imagePattern === 'pattern1' ? 'active' : ''} onClick={() => setImagePattern('pattern1')}>
+                        📐 パターン1 (中心点図)
+                      </button>
+                      <button className={imagePattern === 'pattern2' ? 'active' : ''} onClick={() => setImagePattern('pattern2')}>
+                        📷 パターン2 (実物写真)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="scale-panel">
+                    <h3>📐 Step 1: 縮尺校正</h3>
+                    {!traceScale && !measureStep && (
+                      <button className="btn-warning btn-sm" onClick={startScaling}>🎯 2点を指定して実距離入力</button>
+                    )}
+                    {measureStep === 'scale-p1' && <div style={{ fontSize: 12, color: '#92400e', fontWeight: 700 }}>✋ 画像上で1点目をクリック</div>}
+                    {measureStep === 'scale-p2' && <div style={{ fontSize: 12, color: '#92400e', fontWeight: 700 }}>✋ 画像上で2点目をクリック</div>}
+                    {traceScale && !measureStep && (
+                      <>
+                        <div style={{ fontSize: 12, color: '#059669', marginBottom: 6 }}>
+                          ✅ 校正済: 1画像px = {traceScale.mmPerImgPx.toFixed(4)} mm
+                        </div>
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          <button className="btn-secondary btn-sm" onClick={startScaling}>🔄 再校正</button>
+                          <button className="btn-danger btn-sm" onClick={() => setTraceScale(null)}>クリア</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {traceScale && imagePattern === 'pattern1' && (
+                    <>
+                      <div className="measure-panel">
+                        <h3>📏 Step 2: 穴径測定 (任意)</h3>
+                        {!measureStep?.startsWith('measure') && measureStep !== 'pattern1-mark' && (
+                          <button className="btn-primary btn-sm" onClick={startDiameterMeasure}>🎯 2点クリックで直径測定</button>
+                        )}
+                        {measureStep === 'measure-p1' && <div style={{ fontSize: 12, color: '#1e40af', fontWeight: 700 }}>✋ 穴の端 1点目をクリック</div>}
+                        {measureStep === 'measure-p2' && <div style={{ fontSize: 12, color: '#1e40af', fontWeight: 700 }}>✋ 穴の端 2点目をクリック</div>}
+                      </div>
+                      <div style={{ background: '#ecfdf5', border: '1px solid #10b981', borderRadius: 8, padding: 12, marginBottom: 10 }}>
+                        <h3 style={{ margin: '0 0 8px', fontSize: 13, color: '#065f46' }}>🔵 Step 3: 中心点をクリックで穴配置</h3>
+                        <div className="dist-row-3">
+                          <div><label>穴No.</label><HoleNameInput value={clickName} onChange={setClickName} /></div>
+                          <div><label>深さ (mm)</label><input type="number" step="1" value={clickDepth} onChange={e => setClickDepth(parseFloat(e.target.value) || 0)} /></div>
+                          <div><label>穴径 φ (mm)</label><DiameterInput value={clickDiameter} onChange={setClickDiameter} /></div>
+                        </div>
+                        {measureStep !== 'pattern1-mark' ? (
+                          <button className="btn-success btn-sm" onClick={startPattern1Mark} style={{ width: '100%' }}>
+                            ✋ 中心点配置モード開始
+                          </button>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: 12, color: '#065f46', fontWeight: 700, marginBottom: 6 }}>
+                              ✋ 中心点を連続でクリックして配置中...
+                            </div>
+                            <button className="btn-danger btn-sm" onClick={() => { setMeasureStep(null); setTempPoints([]); }} style={{ width: '100%' }}>
+                              ⏹️ 配置モード終了
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {traceScale && imagePattern === 'pattern2' && (
+                    <div style={{ background: '#ecfdf5', border: '1px solid #10b981', borderRadius: 8, padding: 12, marginBottom: 10 }}>
+                      <h3 style={{ margin: '0 0 8px', fontSize: 13, color: '#065f46' }}>🔵 Step 2: 配置方式を選択</h3>
+                      <div className="mode-toggle" style={{ marginBottom: 8 }}>
+                        <button className={pattern2Mode === 'drag' ? 'active' : ''} onClick={() => setPattern2Mode('drag')}>
+                          🖱️ クリック&ドラッグ
+                        </button>
+                        <button className={pattern2Mode === '3points' ? 'active' : ''} onClick={() => setPattern2Mode('3points')}>
+                          🎯 3点クリック
+                        </button>
+                      </div>
+                      <div className="dist-row">
+                        <div><label>穴No.</label><HoleNameInput value={clickName} onChange={setClickName} /></div>
+                        <div><label>深さ (mm)</label><input type="number" step="1" value={clickDepth} onChange={e => setClickDepth(parseFloat(e.target.value) || 0)} /></div>
+                      </div>
+
+                      {pattern2Mode === '3points' && (
+                        <>
+                          <div style={{ fontSize: 11, color: '#065f46', marginBottom: 6 }}>
+                            💡 穴の縁を3点クリックして円を自動計算
+                          </div>
+                          {!measureStep?.startsWith('pick') ? (
+                            <button className="btn-success btn-sm" onClick={startPattern2Circle} style={{ width: '100%' }}>
+                              🎯 3点クリックで円計算モード開始
+                            </button>
+                          ) : (
+                            <>
+                              {measureStep === 'pick-edge1' && <div style={{ fontSize: 12, color: '#065f46', fontWeight: 700 }}>✋ 縁1点目</div>}
+                              {measureStep === 'pick-edge2' && <div style={{ fontSize: 12, color: '#065f46', fontWeight: 700 }}>✋ 縁2点目</div>}
+                              {measureStep === 'pick-edge3' && <div style={{ fontSize: 12, color: '#065f46', fontWeight: 700 }}>✋ 縁3点目</div>}
+                              <button className="btn-danger btn-sm" onClick={() => { setMeasureStep(null); setTempPoints([]); }} style={{ width: '100%', marginTop: 6 }}>
+                                ⏹️ 配置モード終了
+                              </button>
+                            </>
+                          )}
+                        </>
+                      )}
+
+                      {pattern2Mode === 'drag' && (
+                        <>
+                          <div style={{ fontSize: 11, color: '#065f46', marginBottom: 6 }}>
+                            💡 穴の中心をクリック → そのままドラッグで半径を調整 → 離すと確定<br />
+                            連続配置: 何度でも繰り返しOK
+                          </div>
+                          {measureStep !== 'drag-circle' ? (
+                            <button className="btn-success btn-sm" onClick={startPattern2Drag} style={{ width: '100%' }}>
+                              🖱️ クリック&ドラッグ配置モード開始
+                            </button>
+                          ) : (
+                            <>
+                              <div style={{ fontSize: 12, color: '#065f46', fontWeight: 700, marginBottom: 6 }}>
+                                ✋ 穴の中心を押して、ドラッグして円のサイズを調整、離して確定
+                              </div>
+                              <button className="btn-danger btn-sm" onClick={() => { setMeasureStep(null); setTempPoints([]); setDragCircle(null); dragCircleRef.current = null; }} style={{ width: '100%' }}>
+                                ⏹️ 配置モード終了
+                              </button>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="actions" style={{ marginTop: 12 }}>
+                    <button className="btn-danger btn-sm" onClick={clearTraceImage}>🗑️ 画像クリア</button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    canvas: {
+      title: '④ 穴配置 & 深さマップ',
+      content: (
+        <div>
+          <div className="toolbar">
+            <button className="annotation-tool"
+                    onClick={() => setDisplayMode(displayMode === 'full' ? 'clipped' : 'full')}
+                    style={{ background: displayMode === 'clipped' ? '#06b6d4' : '#e5e7eb', color: displayMode === 'clipped' ? 'white' : '#374151' }}
+                    title="計算に使われない線を消すかどうか">
+              {displayMode === 'clipped' ? '✂️ 重なり線OFF' : '○ 全円表示'}
+            </button>
+            <div className="divider" />
+            <button className="annotation-tool"
+                    onClick={() => {
+                      const t = transformRef.current;
+                      if (!t) return;
+                      const canvas = canvasRef.current;
+                      const [x, y] = t.fromScreen(canvas.width / 2, canvas.height / 2);
+                      openCreateTextModal(Math.round(x * 10) / 10, Math.round(y * 10) / 10);
+                    }}>📝 テキスト追加</button>
+            <div className="divider" />
+            <button className={`annotation-tool ${distanceLockMode ? 'active' : ''}`}
+                    onClick={() => { setDistanceLockMode(!distanceLockMode); setPanMode(false); setRotateMode(false); }}
+                    style={distanceLockMode ? { background: '#f59e0b', color: 'white' } : {}}>
+              {distanceLockMode ? '🔒 距離固定ON' : '🔒 距離固定'}
+            </button>
+            <button className={`annotation-tool ${rotateMode ? 'active' : ''}`}
+                    onClick={() => { setRotateMode(!rotateMode); setPanMode(false); setDistanceLockMode(false); }}
+                    style={rotateMode ? { background: '#a855f7', color: 'white' } : {}}
+                    disabled={holes.length < 2}>
+              {rotateMode ? '🔄 回転ON' : '🔄 全穴回転'}
+            </button>
+            <button className={`annotation-tool ${panMode ? 'active' : ''}`}
+                    onClick={() => { setPanMode(!panMode); setDistanceLockMode(false); setRotateMode(false); }}>✋ パン</button>
+            <div className="divider" />
+            <button className="btn-secondary btn-sm" onClick={() => applyZoom(1.25, canvasRef.current.clientWidth / 2, canvasRef.current.clientHeight / 2)}>🔍+</button>
+            <button className="btn-secondary btn-sm" onClick={() => applyZoom(1/1.25, canvasRef.current.clientWidth / 2, canvasRef.current.clientHeight / 2)}>🔍−</button>
+            <button className="btn-secondary btn-sm" onClick={resetView}>⌂ リセット</button>
+            <span className="zoom-info">倍率: {(viewZoom * 100).toFixed(0)}%</span>
+            <div className="divider" />
+            <button className="btn-warning btn-sm" onClick={undo} disabled={!canUndo}>↶ Undo</button>
+          </div>
+          <canvas ref={canvasRef} className={`main ${canvasCursorClass}`}
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerUp}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd} />
+        </div>
+      ),
+    },
+    result: calc ? {
+      title: '⑤ 計算結果',
+      content: (
+        <div>
+          <div className="summary">
+            <div className="big">
+              合計体積: {calc.totalVolume.toFixed(0).toLocaleString()} mm³
+              <div style={{ fontSize: 14, color: '#6b7280', marginTop: 4 }}>
+                = {(calc.totalVolume / 1000).toFixed(2)} cm³ / {(calc.totalVolume / 1e6).toFixed(3)} L
+              </div>
+            </div>
+            <table>
+              <thead><tr><th>穴</th><th>φ</th><th>深さ</th><th>面積(mm²)</th><th>体積(mm³)</th><th>体積(cm³)</th></tr></thead>
+              <tbody>
+                {[...calc.results].sort((a, b) => b.depth - a.depth).map((r, i) => (
+                  <tr key={i}>
+                    <td>{r.name}</td><td>φ{r.diameter}</td><td>{r.depth}</td>
+                    <td>{r.area.toFixed(3)}</td><td>{r.volume.toFixed(2)}</td><td>{(r.volume / 1000).toFixed(2)}</td>
+                  </tr>
+                ))}
+                <tr style={{ fontWeight: 700, background: '#eff6ff' }}>
+                  <td>合計</td><td>—</td><td>—</td>
+                  <td>{calc.totalArea.toFixed(3)}</td><td>{calc.totalVolume.toFixed(2)}</td><td>{(calc.totalVolume / 1000).toFixed(2)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="actions" style={{ marginTop: 16 }}>
+            <button className="btn-primary" onClick={exportPDF}>📄 PDF出力</button>
+            <button className="btn-primary" onClick={exportPNG}>🖼️ PNG出力</button>
+            <button className="btn-primary" onClick={exportExcel}>📊 Excel出力</button>
+          </div>
+        </div>
+      ),
+    } : null,
+  };
+
+  const leftPanels = panelOrder.filter(id => ['common', 'mode', 'list'].includes(id));
+  const rightPanels = panelOrder.filter(id => ['canvas', 'result'].includes(id));
+
+  const allPresetsForModal = useMemo(() => {
+    const all = new Set(holeNumberPresets);
+    holeNumberPacks.forEach(p => p.items.forEach(i => all.add(i)));
+    return Array.from(all);
+  }, [holeNumberPresets, holeNumberPacks]);
+
+  return (
+    <div>
+      <h1>🛠️ 連コア加工 体積計算ツール <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 400 }}>v18</span></h1>
+      <div className="grid">
+        <div>{leftPanels.map(id => panels[id] && (<SortableCard key={id} id={id} title={panels[id].title} onMove={movePanel}>{panels[id].content}</SortableCard>))}</div>
+        <div>{rightPanels.map(id => panels[id] && (<SortableCard key={id} id={id} title={panels[id].title} onMove={movePanel}>{panels[id].content}</SortableCard>))}</div>
+      </div>
+      <div className={`auto-save-indicator ${autoSaveStatus ? 'show' : ''}`}>{autoSaveStatus}</div>
+      {textModal && <TextEditModal initial={textModal.initial} onCancel={() => setTextModal(null)} onSave={handleTextModalSave} />}
+      {distanceModal && <DistanceInputModal title={distanceModal.title} message={distanceModal.message} onCancel={handleDistanceModalCancel} onSave={handleDistanceModalSave} defaultValue={distanceModal.defaultValue ?? '100'} />}
+      {packModal && <PackEditModal initial={packModal.initial} allPresets={allPresetsForModal} onCancel={() => setPackModal(null)} onSave={savePack} onDelete={deletePack} />}
+      {projectModalOpen && <ProjectManagerModal projects={projects} currentData={{ holes, annotations }} onClose={() => setProjectModalOpen(false)} onLoad={loadProject} onSave={saveProject} onDelete={deleteProject} onExportFile={exportProjectFile} onImportFile={importProjectFile} onExportSingle={exportSingleProject} />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
