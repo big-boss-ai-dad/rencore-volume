@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>連コア体積計算ツール v18</title>
+<title>連コア体積計算ツール v20</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
@@ -183,14 +183,39 @@ function triangulate(A, B, distA, distB, side = 'up') {
   const dx = B.x - A.x, dy = B.y - A.y;
   const d = Math.sqrt(dx * dx + dy * dy);
   if (d === 0) return null;
-  if (d > distA + distB || d < Math.abs(distA - distB)) return null;
-  const a = (distA * distA - distB * distB + d * d) / (2 * d);
-  const h2 = distA * distA - a * a;
-  if (h2 < 0) return null;
+
+  // 自動補正: 三角形不等式を満たすように最小限だけ調整する
+  // 測定誤差（1〜2mm程度）を許容し、業務を止めない
+  let a = distA, b = distB;
+  let corrected = false;
+  const eps = 0.01; // 計算安定のための微小値
+
+  if (d > a + b) {
+    // 穴間距離が distA+distB より大きい → 両方を比率維持でスケールアップ
+    const scale = (d + eps) / (a + b);
+    a *= scale; b *= scale;
+    corrected = true;
+  } else if (d < Math.abs(a - b)) {
+    // 穴間距離が |distA-distB| より小さい → 大きい方を縮める
+    if (a >= b) a = b + d - eps;
+    else        b = a + d - eps;
+    corrected = true;
+  }
+
+  const aa = (a * a - b * b + d * d) / (2 * d);
+  const h2 = a * a - aa * aa;
+  if (h2 < 0) return null; // それでも成立しない場合のみ null
   const h = Math.sqrt(h2);
-  const mx = A.x + a * dx / d, my = A.y + a * dy / d;
+  const mx = A.x + aa * dx / d, my = A.y + aa * dy / d;
   const sign = side === 'up' ? 1 : -1;
-  return { x: mx + sign * h * (-dy) / d, y: my + sign * h * dx / d };
+  return {
+    x: mx + sign * h * (-dy) / d,
+    y: my + sign * h * dx / d,
+    corrected,
+    correction: corrected
+      ? `距離を自動補正しました (A:${distA}→${Math.round(a*10)/10}, B:${distB}→${Math.round(b*10)/10})`
+      : null,
+  };
 }
 
 function circleFrom3Points(p1, p2, p3) {
@@ -527,6 +552,70 @@ function ProjectManagerModal({ projects, currentData, onClose, onLoad, onSave, o
 }
 
 // ============ メイン ============
+// ============ フォーム入力コンポーネント (App外に定義: 毎レンダーで再生成されないように) ============
+// 穴No.入力: テキスト + プリセットドロップダウン
+function HoleNameInput({ value, onChange, presets }) {
+  return (
+    <div style={{ display: 'flex', gap: 2 }}>
+      <input type="text" value={value} onChange={e => onChange(e.target.value)} style={{ flex: 1 }} />
+      <select value="" onChange={e => { if (e.target.value) onChange(e.target.value); }} style={{ width: 28, fontSize: 11 }}>
+        <option value="">▼</option>
+        {presets.map(p => <option key={p} value={p}>{p}</option>)}
+      </select>
+    </div>
+  );
+}
+
+// 穴径入力: 数値 + プリセットドロップダウン
+function DiameterInput({ value, onChange, presets }) {
+  return (
+    <div style={{ display: 'flex', gap: 2 }}>
+      <input type="number" step="0.1" value={value} onChange={e => onChange(parseFloat(e.target.value) || 0)} style={{ flex: 1 }} />
+      <select value="" onChange={e => { if (e.target.value) onChange(parseFloat(e.target.value)); }} style={{ width: 28, fontSize: 11 }}>
+        <option value="">▼</option>
+        {presets.map(p => <option key={p} value={p}>φ{p}</option>)}
+      </select>
+    </div>
+  );
+}
+
+// 数値入力: ローカル文字列状態で連続入力を可能にする
+// (parseFloat || 0 で毎打鍵ごとにリセットされる問題を解消)
+function NumInput({ value, onChange, step = 1, style = {} }) {
+  const [local, setLocal] = React.useState(String(value));
+  // 外部から value が大幅に変わった場合に同期
+  const prevRef = React.useRef(value);
+  React.useEffect(() => {
+    if (prevRef.current !== value && parseFloat(local) !== value) {
+      setLocal(String(value));
+    }
+    prevRef.current = value;
+  }, [value]);
+
+  return (
+    <input
+      type="number"
+      step={step}
+      value={local}
+      style={{ ...style }}
+      onChange={e => {
+        setLocal(e.target.value);
+        const n = parseFloat(e.target.value);
+        if (!isNaN(n)) onChange(n);
+      }}
+      onBlur={e => {
+        const n = parseFloat(e.target.value);
+        if (isNaN(n) || e.target.value === '') {
+          setLocal(String(value)); // 不正値はリセット
+        } else {
+          onChange(n);
+          setLocal(String(n));
+        }
+      }}
+    />
+  );
+}
+
 function App() {
   // ---- プリセット & パック ----
   const [holeNumberPresets, setHoleNumberPresets] = useState(['3-3', '3-4', '3-5', '3-6', '3-7']);
@@ -735,7 +824,7 @@ function App() {
   // 現在の状態を .json でダウンロード
   const exportProjectFile = () => {
     const data = {
-      version: 'v18',
+      version: 'v20',
       type: 'rencore-project',
       exportedAt: new Date().toISOString(),
       data: {
@@ -769,7 +858,7 @@ function App() {
     const proj = projects[name];
     if (!proj) return;
     const data = {
-      version: 'v18',
+      version: 'v20',
       type: 'rencore-project',
       projectName: name,
       exportedAt: new Date().toISOString(),
@@ -916,7 +1005,12 @@ function App() {
     const A = holes[distForm.refAIdx], B = holes[distForm.refBIdx];
     if (!A || !B || distForm.refAIdx === distForm.refBIdx) { alert('基準穴Aと基準穴Bは別の穴を選択してください'); return; }
     const pos = triangulate(A, B, distForm.distA, distForm.distB, distForm.side);
-    if (!pos) { alert('その距離では三角形が成立しません'); return; }
+    if (!pos) { alert('穴の配置を計算できませんでした（基準穴が重なっている可能性があります）'); return; }
+    // 自動補正があった場合はトーストで通知（業務は止めない）
+    if (pos.corrected) {
+      setAutoSaveStatus(`⚠️ ${pos.correction}`);
+      setTimeout(() => setAutoSaveStatus(''), 4000);
+    }
     const name = distForm.name.trim() || `穴${holes.length + 1}`;
     setHoles([...holes, { name, x: Math.round(pos.x * 1000) / 1000, y: Math.round(pos.y * 1000) / 1000, depth: distForm.depth, diameter: distForm.diameter, lockedTo: null }]);
     setDistForm({ ...distForm, name: '' });
@@ -1809,26 +1903,6 @@ function App() {
     measureStep?.startsWith('pick') || measureStep === 'pattern1-mark' || measureStep === 'drag-circle' ? 'crosshair' :
     inputMode === 'click' ? 'crosshair' : '';
 
-  // ドロップダウン入力
-  const HoleNameInput = ({ value, onChange }) => (
-    <div style={{ display: 'flex', gap: 2 }}>
-      <input type="text" value={value} onChange={e => onChange(e.target.value)} style={{ flex: 1 }} />
-      <select value="" onChange={e => { if (e.target.value) onChange(e.target.value); }} style={{ width: 28, fontSize: 11 }}>
-        <option value="">▼</option>
-        {activePresets.map(p => <option key={p} value={p}>{p}</option>)}
-      </select>
-    </div>
-  );
-  const DiameterInput = ({ value, onChange }) => (
-    <div style={{ display: 'flex', gap: 2 }}>
-      <input type="number" step="0.1" value={value} onChange={e => onChange(parseFloat(e.target.value) || 0)} style={{ flex: 1 }} />
-      <select value="" onChange={e => { if (e.target.value) onChange(parseFloat(e.target.value)); }} style={{ width: 28, fontSize: 11 }}>
-        <option value="">▼</option>
-        {diameterPresets.map(p => <option key={p} value={p}>φ{p}</option>)}
-      </select>
-    </div>
-  );
-
   const panels = {
     common: {
       title: '① 共通設定',
@@ -1944,11 +2018,11 @@ function App() {
             <tbody>
               {holes.map((h, i) => (
                 <tr key={i}>
-                  <td><HoleNameInput value={h.name} onChange={v => updateHole(i, 'name', v)} /></td>
-                  <td><DiameterInput value={h.diameter} onChange={v => updateHole(i, 'diameter', v)} /></td>
-                  <td><input type="number" step="0.1" value={h.x} onChange={e => updateHole(i, 'x', e.target.value)} /></td>
-                  <td><input type="number" step="0.1" value={h.y} onChange={e => updateHole(i, 'y', e.target.value)} /></td>
-                  <td><input type="number" step="1" value={h.depth} onChange={e => updateHole(i, 'depth', e.target.value)} /></td>
+                  <td><HoleNameInput value={h.name} onChange={v => updateHole(i, 'name', v)} presets={activePresets} /></td>
+                  <td><DiameterInput value={h.diameter} onChange={v => updateHole(i, 'diameter', v)} presets={diameterPresets} /></td>
+                  <td><NumInput step={0.1} value={h.x} onChange={v => updateHole(i, 'x', v)} /></td>
+                  <td><NumInput step={0.1} value={h.y} onChange={v => updateHole(i, 'y', v)} /></td>
+                  <td><NumInput step={1} value={h.depth} onChange={v => updateHole(i, 'depth', v)} /></td>
                   <td>
                     <select value={h.lockedTo ?? ''} onChange={e => updateHole(i, 'lockedTo', e.target.value === '' ? null : parseInt(e.target.value))}>
                       <option value="">なし</option>
@@ -2004,9 +2078,9 @@ function App() {
           {inputMode === 'click' && (
             <div style={{ marginTop: 10 }}>
               <div className="dist-row-3">
-                <div><label>穴No.</label><HoleNameInput value={clickName} onChange={setClickName} /></div>
-                <div><label>深さ (mm)</label><input type="number" step="1" value={clickDepth} onChange={e => setClickDepth(parseFloat(e.target.value) || 0)} /></div>
-                <div><label>穴径 φ (mm)</label><DiameterInput value={clickDiameter} onChange={setClickDiameter} /></div>
+                <div><label>穴No.</label><HoleNameInput value={clickName} onChange={setClickName} presets={activePresets} /></div>
+                <div><label>深さ (mm)</label><NumInput step={1} value={clickDepth} onChange={setClickDepth} /></div>
+                <div><label>穴径 φ (mm)</label><DiameterInput value={clickDiameter} onChange={setClickDiameter} presets={diameterPresets} /></div>
               </div>
               <div className="hint">💡 右の黒画面をクリックで穴を追加</div>
             </div>
@@ -2020,16 +2094,16 @@ function App() {
                 {holes.length >= 2 && '🔹 3個目以降: 2穴からの距離で三角測量'}
               </div>
               <div className="dist-row-3">
-                <div><label>穴No.</label><HoleNameInput value={distForm.name} onChange={v => setDistForm({...distForm, name: v})} /></div>
-                <div><label>深さ (mm)</label><input type="number" step="1" value={distForm.depth} onChange={e => setDistForm({...distForm, depth: parseFloat(e.target.value) || 0})} /></div>
-                <div><label>穴径 φ (mm)</label><DiameterInput value={distForm.diameter} onChange={v => setDistForm({...distForm, diameter: v})} /></div>
+                <div><label>穴No.</label><HoleNameInput value={distForm.name} onChange={v => setDistForm({...distForm, name: v})} presets={activePresets} /></div>
+                <div><label>深さ (mm)</label><NumInput step={1} value={distForm.depth} onChange={v => setDistForm({...distForm, depth: v})} /></div>
+                <div><label>穴径 φ (mm)</label><DiameterInput value={distForm.diameter} onChange={v => setDistForm({...distForm, diameter: v})} presets={diameterPresets} /></div>
               </div>
               {holes.length >= 1 && (
                 <div className="dist-row">
                   <div><label>基準穴A</label><select value={distForm.refAIdx} onChange={e => setDistForm({...distForm, refAIdx: parseInt(e.target.value)})} disabled={holes.length < 2}>
                     {holes.map((h, i) => <option key={i} value={i}>{h.name}</option>)}
                   </select></div>
-                  <div><label>距離A (mm)</label><input type="number" step="0.1" value={distForm.distA} onChange={e => setDistForm({...distForm, distA: parseFloat(e.target.value) || 0})} /></div>
+                  <div><label>距離A (mm)</label><NumInput step={0.1} value={distForm.distA} onChange={v => setDistForm({...distForm, distA: v})} /></div>
                 </div>
               )}
               {holes.length >= 2 && (
@@ -2037,7 +2111,7 @@ function App() {
                   <div><label>基準穴B</label><select value={distForm.refBIdx} onChange={e => setDistForm({...distForm, refBIdx: parseInt(e.target.value)})}>
                     {holes.map((h, i) => <option key={i} value={i}>{h.name}</option>)}
                   </select></div>
-                  <div><label>距離B (mm)</label><input type="number" step="0.1" value={distForm.distB} onChange={e => setDistForm({...distForm, distB: parseFloat(e.target.value) || 0})} /></div>
+                  <div><label>距離B (mm)</label><NumInput step={0.1} value={distForm.distB} onChange={v => setDistForm({...distForm, distB: v})} /></div>
                 </div>
               )}
               {holes.length >= 2 && (
@@ -2114,9 +2188,9 @@ function App() {
                       <div style={{ background: '#ecfdf5', border: '1px solid #10b981', borderRadius: 8, padding: 12, marginBottom: 10 }}>
                         <h3 style={{ margin: '0 0 8px', fontSize: 13, color: '#065f46' }}>🔵 Step 3: 中心点をクリックで穴配置</h3>
                         <div className="dist-row-3">
-                          <div><label>穴No.</label><HoleNameInput value={clickName} onChange={setClickName} /></div>
-                          <div><label>深さ (mm)</label><input type="number" step="1" value={clickDepth} onChange={e => setClickDepth(parseFloat(e.target.value) || 0)} /></div>
-                          <div><label>穴径 φ (mm)</label><DiameterInput value={clickDiameter} onChange={setClickDiameter} /></div>
+                          <div><label>穴No.</label><HoleNameInput value={clickName} onChange={setClickName} presets={activePresets} /></div>
+                          <div><label>深さ (mm)</label><NumInput step={1} value={clickDepth} onChange={setClickDepth} /></div>
+                          <div><label>穴径 φ (mm)</label><DiameterInput value={clickDiameter} onChange={setClickDiameter} presets={diameterPresets} /></div>
                         </div>
                         {measureStep !== 'pattern1-mark' ? (
                           <button className="btn-success btn-sm" onClick={startPattern1Mark} style={{ width: '100%' }}>
@@ -2148,8 +2222,8 @@ function App() {
                         </button>
                       </div>
                       <div className="dist-row">
-                        <div><label>穴No.</label><HoleNameInput value={clickName} onChange={setClickName} /></div>
-                        <div><label>深さ (mm)</label><input type="number" step="1" value={clickDepth} onChange={e => setClickDepth(parseFloat(e.target.value) || 0)} /></div>
+                        <div><label>穴No.</label><HoleNameInput value={clickName} onChange={setClickName} presets={activePresets} /></div>
+                        <div><label>深さ (mm)</label><NumInput step={1} value={clickDepth} onChange={setClickDepth} /></div>
                       </div>
 
                       {pattern2Mode === '3points' && (
@@ -2310,7 +2384,7 @@ function App() {
 
   return (
     <div>
-      <h1>🛠️ 連コア加工 体積計算ツール <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 400 }}>v18</span></h1>
+      <h1>🛠️ 連コア加工 体積計算ツール <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 400 }}>v20</span></h1>
       <div className="grid">
         <div>{leftPanels.map(id => panels[id] && (<SortableCard key={id} id={id} title={panels[id].title} onMove={movePanel}>{panels[id].content}</SortableCard>))}</div>
         <div>{rightPanels.map(id => panels[id] && (<SortableCard key={id} id={id} title={panels[id].title} onMove={movePanel}>{panels[id].content}</SortableCard>))}</div>
