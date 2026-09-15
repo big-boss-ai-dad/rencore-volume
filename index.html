@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>連コア体積計算ツール v22</title>
+<title>連コア体積計算ツール v23</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
@@ -824,7 +824,7 @@ function App() {
   // 現在の状態を .json でダウンロード
   const exportProjectFile = () => {
     const data = {
-      version: 'v22',
+      version: 'v23',
       type: 'rencore-project',
       exportedAt: new Date().toISOString(),
       data: {
@@ -858,7 +858,7 @@ function App() {
     const proj = projects[name];
     if (!proj) return;
     const data = {
-      version: 'v22',
+      version: 'v23',
       type: 'rencore-project',
       projectName: name,
       exportedAt: new Date().toISOString(),
@@ -2118,8 +2118,8 @@ function App() {
                 <div className="row">
                   <label>配置側</label>
                   <div className="mode-toggle" style={{ flex: 1 }}>
-                    <button className={distForm.side === 'up' ? 'active' : ''} onClick={() => setDistForm(prev => ({...prev, side: 'up'})}>上側</button>
-                    <button className={distForm.side === 'down' ? 'active' : ''} onClick={() => setDistForm(prev => ({...prev, side: 'down'})}>下側</button>
+                    <button className={distForm.side === 'up' ? 'active' : ''} onClick={() => setDistForm(prev => ({...prev, side: 'up'}))}>上側</button>
+                    <button className={distForm.side === 'down' ? 'active' : ''} onClick={() => setDistForm(prev => ({...prev, side: 'down'}))}>下側</button>
                   </div>
                 </div>
               )}
@@ -2384,7 +2384,7 @@ function App() {
 
   return (
     <div>
-      <h1>🛠️ 連コア加工 体積計算ツール <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 400 }}>v22</span></h1>
+      <h1>🛠️ 連コア加工 体積計算ツール <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 400 }}>v23</span></h1>
       <div className="grid">
         <div>{leftPanels.map(id => panels[id] && (<SortableCard key={id} id={id} title={panels[id].title} onMove={movePanel}>{panels[id].content}</SortableCard>))}</div>
         <div>{rightPanels.map(id => panels[id] && (<SortableCard key={id} id={id} title={panels[id].title} onMove={movePanel}>{panels[id].content}</SortableCard>))}</div>
